@@ -10,7 +10,7 @@ const apiClient = axios.create({
 });
 
 export default {
-    getPokemons(limit = 1100, offset = 0) {
+    getPokemons(limit = 1025, offset = 0) {
         return apiClient.get(`/pokemon?limit=${limit}&offset=${offset}`);
     },
     getPokemonDetails(name) {
@@ -73,5 +73,17 @@ export default {
     },
     getPokemonDetailsByUrl(url) {
         return apiClient.get(url);
-    }
+    },
+    getMoveDetails(url) {
+        return apiClient.get(url);
+    },
+    getMoves() {
+        return apiClient.get('/move?limit=1000');
+    },
+    getItems(limit = 1000) {
+        return apiClient.get(`/item?limit=${limit}`);
+    },
+    getBerries(limit = 1000) {
+        return apiClient.get(`/berry?limit=${limit}`);
+    },
 };

@@ -77,11 +77,13 @@ li {
   cursor: pointer;
   text-transform: capitalize;
   display: flex;
+  right: -300px;
   align-items: center;
 }
 img {
   width: 50px;
   height: 50px;
   margin-right: 10px;
+
 }
 </style>

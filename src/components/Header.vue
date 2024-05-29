@@ -42,7 +42,7 @@ watch(() => props.searchQuery, (newVal) => {
 .header {
   position: fixed;
   top: 0;
-  width: 100%;
+  width: 98%;
   background-color: white;
   padding: 15px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);

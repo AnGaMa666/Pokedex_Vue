@@ -1,53 +1,51 @@
 <template>
-  <div v-if="pokemonDetails" class="pokemon-details fixed">
-    <h1 class="text-3xl font-bold capitalize">{{ pokemonDetails.name }}</h1>
-    <img
-        v-if="isShiny"
-        :src="pokemonDetails.sprites.front_shiny"
-        :alt="pokemonDetails.name"
-        class="my-4 mx-auto"
-    />
-    <img
-        v-else
-        :src="pokemonDetails.sprites.front_default"
-        :alt="pokemonDetails.name"
-        class="my-4 mx-auto"
-    />
-    <p v-if="species && species.flavor_text_entries.length">
-      {{ getFlavorText(species.flavor_text_entries, 'de') }}<br>
-      {{ getFlavorText(species.flavor_text_entries, 'en') }}
-    </p>
-    <div class="mt-4">
-      <div><strong>Pokédex Number:</strong> {{ pokemonDetails.id }}</div>
-      <div><strong>Height:</strong> {{ pokemonDetails.height / 10 }} m</div>
-      <div><strong>Weight:</strong> {{ pokemonDetails.weight / 10 }} kg</div>
-      <div><strong>Type:</strong> {{ getTypes(pokemonDetails.types) }}</div>
-      <div><strong>No Damage From:</strong> {{ immunityForm.join(', ') }}</div>
-      <div><strong>Double Damage from:</strong> {{ weaknesses2.join(', ') }}</div>
-      <div><strong>Effective against:</strong> {{ strong2.join(', ') }}</div>
-      <div><strong>Abilities:</strong> {{ getAbilities(pokemonDetails.abilities) }}</div>
-      <div><strong>Base Experience:</strong> {{ pokemonDetails.base_experience }}</div>
-      <div>
-        <div><strong>Evolution Chain:</strong>
-          <table class="evolution-chain">
-            <tr>
-              <td v-for="evolution in evolutionChain" :key="evolution.name">
-                <div class="evolution-item">
-                  <img v-if="evolution.sprite" :src="evolution.sprite" :alt="evolution.name" />
-                  <span>{{ evolution.name }}</span>
-                </div>
-              </td>
-            </tr>
-          </table>
+  <TypeColor :types="pokemonDetails?.types || []"> <!-- Ensure types is never undefined -->
+    <div class="pokemon-details" v-if="pokemonDetails">
+      <h1 class="text-3xl font-bold capitalize">{{ pokemonDetails.name }}
+      <img
+          :src="isShiny ? pokemonDetails.sprites.front_shiny : pokemonDetails.sprites.front_default"
+          :alt="pokemonDetails.name"
+          class="imgh"
+      />
+      </h1>
+      <p v-if="species?.flavor_text_entries.length">
+        {{ getFlavorText(species.flavor_text_entries, 'de') }}<br>
+        {{ getFlavorText(species.flavor_text_entries, 'en') }}
+      </p>
+      <div class="mt-4">
+        <div><strong>Pokédex Number:</strong> {{ pokemonDetails.id }}</div>
+        <div><strong>Height:</strong> {{ pokemonDetails.height / 10 }} m</div>
+        <div><strong>Weight:</strong> {{ pokemonDetails.weight / 10 }} kg</div>
+        <div><strong>Type:</strong> {{ getTypes(pokemonDetails.types) }}</div>
+        <div><strong>No Damage From:</strong> {{ immunityForm.join(', ') }}</div>
+        <div><strong>Double Damage from:</strong> {{ weaknesses2.join(', ') }}</div>
+        <div><strong>Effective against:</strong> {{ strong2.join(', ') }}</div>
+        <div><strong>Abilities:</strong> {{ getAbilities(pokemonDetails.abilities) }}</div>
+        <div><strong>Base Experience:</strong> {{ pokemonDetails.base_experience }}</div>
+        <div>
+          <div><strong>Evolution Chain:</strong>
+            <table class="evolution-chain">
+              <tr>
+                <td v-for="evolution in evolutionChain" :key="evolution.name">
+                  <div class="evolution-item">
+                    <!-- Between pokemon evolution method, level, or item  -->
+                    <img v-if="evolution.sprite" :src="evolution.sprite" :alt="evolution.name" />
+                    <span>{{ evolution.name }}</span>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </TypeColor>
 </template>
 
 <script setup>
 import { ref, watch, onMounted } from 'vue';
 import PokeAPI from '@/services/pokeapi';
+import TypeColor from './TypeColor.vue';
 
 const props = defineProps({
   pokemon: Object,
@@ -100,18 +98,11 @@ const getFlavorText = (entries, lang) => {
   return entry ? entry.flavor_text : 'No description available.';
 };
 
-const getTypes = (types) => {
-  return types.map(type => type.type.name).join('/');
-};
+const getTypes = (types) => types.map(type => type.type.name).join(', ');
+const getAbilities = (abilities) => abilities.map(ability => ability.ability.name).join(', ');
 
-const getAbilities = (abilities) => {
-  return abilities.map(ability => ability.ability.name).join(', ');
-};
-
-watch(() => props.pokemon, (newVal) => {
-  if (newVal) {
-    fetchPokemonDetails(newVal.name);
-  }
+watch(() => props.pokemon, (newPokemon) => {
+  fetchPokemonDetails(newPokemon?.name);
 });
 
 onMounted(() => {
@@ -125,7 +116,6 @@ onMounted(() => {
 .fixed {
   position: fixed;
   top: 60px; /* Adjust top to accommodate header */
-  background: white;
   padding: 25px;
   margin-left: 60px;
   height: calc(100vh - 60px); /* Adjust height to accommodate header */
@@ -133,8 +123,8 @@ onMounted(() => {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   border: 1px solid #ccc;
   background-color: #f8f8f8;
-  max-width: 1000px;
-  max-height: 900px;
+  max-width: 800px;
+  max-height: 800px;
 }
 
 .evolution-chain {
@@ -151,5 +141,27 @@ onMounted(() => {
 .evolution-item img {
   display: block;
   margin-bottom: 5px;
+}
+
+.pokemon-details {
+  max-width: 750px;
+  padding: 20px;
+  margin: 0 auto;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  border: 1px solid #ccc;
+  background-color: #f8f8f8;
+}
+
+.text-3xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  text-align: center;
+}
+
+.imgh {
+  width: 120px;
+  height: 120px;
+
+  display: block;
 }
 </style>

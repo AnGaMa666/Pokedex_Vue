@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div id="app">
     <Header :searchQuery="searchQuery" @updateSearchQuery="updateSearchQuery" @toggleShiny="toggleShiny" :isShiny="isShiny" />
     <div class="main-container">
       <Navbar />
@@ -15,7 +15,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import {ref} from 'vue';
 import Pokedex from './components/Pokedex.vue';
 import PokemonDetails from './components/PokemonDetails.vue';
 import MoveList from './components/MoveList.vue';
@@ -25,16 +25,17 @@ import Navbar from './components/Navbar.vue';
 const searchQuery = ref('');
 const selectedPokemon = ref(null);
 const selectedPokemonDetails = ref({});
-
 const isShiny = ref(false);
 
 const selectPokemon = async (pokemon) => {
-  selectedPokemon.value = pokemon;
-
-  // Fetching the detailed data of the selected Pokémon
-  const response = await fetch(pokemon.url);
-  const data = await response.json();
-  selectedPokemonDetails.value = data;
+  try {
+    selectedPokemon.value = pokemon;
+    const response = await fetch(pokemon.url);
+    const data = await response.json();
+    selectedPokemonDetails.value = data;
+  } catch (error) {
+    console.error('Error selecting Pokémon:', error);
+  }
 };
 
 const updateSearchQuery = (query) => {
@@ -57,7 +58,7 @@ const toggleShiny = () => {
   justify-content: space-between;
   height: calc(100vh - 60px);
   overflow: hidden;
-  margin-left: 200px; /* Adjusted to accommodate the Navbar */
+  margin-left: 200px;
 }
 
 .details-container {
