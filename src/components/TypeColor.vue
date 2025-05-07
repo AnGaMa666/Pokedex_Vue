@@ -51,8 +51,7 @@ const typeStyle = computed(() => {
     console.log(color2);
     return {
       background: `linear-gradient(to right, ${color1}, ${color2})`,
-    };
-    console.log('hello3');
+    }
   }
   return {};
 });

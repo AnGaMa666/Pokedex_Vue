@@ -1,5 +1,5 @@
 import axios from 'axios';
-
+import { preloadSpritesInBatches } from '@/utils/preloadSprite.js';
 const apiClient = axios.create({
     baseURL: 'https://pokeapi.co/api/v2',
     withCredentials: false,
@@ -80,10 +80,61 @@ export default {
     getMoves() {
         return apiClient.get('/move?limit=1000');
     },
-    getItems(limit = 1000) {
-        return apiClient.get(`/item?limit=${limit}`);
+
+    async getItems(limit = 1000) {
+        const response = await apiClient.get(`/item?limit=${limit}`);
+        const items = response.data.results;
+
+        // Entferne Beeren
+        const filtered = items.filter(item => !item.name.includes('berry'));
+
+        const detailedItems = await Promise.all(
+            filtered.map(item =>
+                apiClient.get(item.url)
+                    .then(res => ({
+                        name: item.name,
+                        image: res.data.sprites?.default || '',
+                    }))
+                    .catch(() => ({
+                        name: item.name,
+                        image: '',
+                    }))
+            )
+        );
+
+        const imageUrls = detailedItems.map(item => item.image).filter(Boolean);
+        await preloadSpritesInBatches(imageUrls);
+
+        return { data: detailedItems };
     },
-    getBerries(limit = 1000) {
-        return apiClient.get(`/berry?limit=${limit}`);
-    },
+
+
+    async getBerries(limit = 300) {
+        const response = await apiClient.get(`/berry?limit=${limit}`);
+        const berries = response.data.results;
+
+        const detailedBerries = await Promise.all(
+            berries.map(async (berry) => {
+                try {
+                    const berryData = await apiClient.get(berry.url);
+                    const itemData = await apiClient.get(berryData.data.item.url);
+                    return {
+                        name: berry.name,
+                        image: itemData.data.sprites?.default || '',
+                    };
+                } catch {
+                    return {
+                        name: berry.name,
+                        image: '',
+                    };
+                }
+            })
+        );
+
+        const { preloadSpritesInBatches } = await import('@/utils/preloadSprite.js');
+        const imageUrls = detailedBerries.map((berry) => berry.image).filter(Boolean);
+        await preloadSpritesInBatches(imageUrls);
+
+        return { data: detailedBerries };
+    }
 };

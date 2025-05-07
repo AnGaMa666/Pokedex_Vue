@@ -2,7 +2,6 @@
   <nav class="fixed">
     <ul>
       <li><router-link to="/pokedex">Pokedex</router-link></li>
-      <li><router-link to="/pokemonDetails">PokemonDetails</router-link></li>
       <li><router-link to="/moves">Moves</router-link></li>
       <li><router-link to="/items">Items</router-link></li>
       <li><router-link to="/berries">Berries</router-link></li>
