@@ -1,10 +1,11 @@
 <template>
   <header class="header">
-    <div class="logo-container" @click="goHome" v-if="ballSprite">
-      <img :src="ballSprite" alt="Pokéball Logo" class="logo" />
-      <span class="logo-text">Pokédex</span>
+    <div class="left">
+      <img class="pokeball" :src="pokeballSprite" :alt="pokeballName" />
+      <h1 class="title">Pokémon Explorer</h1>
     </div>
-    <div class="search-wrapper">
+
+    <div v-if="showSearch" class="search-area">
       <input
           type="text"
           placeholder="Search Pokémon"
@@ -12,122 +13,105 @@
           @input="updateQuery"
           class="search-input"
       />
-      <button @click="toggleShiny" class="styled-button">
-        Toggle Shiny
-      </button>
     </div>
+
+    <button @click="toggleShiny" class="styled-button">
+      Toggle Shiny
+    </button>
   </header>
 </template>
 
 <script setup>
 import { ref, watch, onMounted } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
-import PokeAPI from '@/services/pokeapi';
-import { preloadSprites } from '@/utils/preloadSprite.js';
 
 const props = defineProps({
   searchQuery: String,
   isShiny: Boolean,
+  showSearch: Boolean,
 });
 const emit = defineEmits(['updateSearchQuery', 'toggleShiny']);
 
 const searchQuery = ref(props.searchQuery);
-watch(() => props.searchQuery, (newVal) => {
-  searchQuery.value = newVal;
-});
-const updateQuery = () => emit('updateSearchQuery', searchQuery.value);
-const toggleShiny = () => emit('toggleShiny');
+watch(() => props.searchQuery, val => (searchQuery.value = val));
 
-const router = useRouter();
-const route = useRoute();
-const goHome = () => router.push('/');
-
-const ballSprite = ref('');
-
-const loadRandomBall = async () => {
-  try {
-    const response = await PokeAPI.getItems();
-    const balls = response.data.filter(item => item.name.includes('-ball'));
-    const randomBall = balls[Math.floor(Math.random() * balls.length)];
-
-    const detail = await PokeAPI.getLanguageData(`https://pokeapi.co/api/v2/item/${randomBall.name}`);
-    const sprite = detail.data.sprites?.default;
-
-    await preloadSprites([sprite]);
-    ballSprite.value = sprite || '';
-  } catch (error) {
-    console.error('Fehler beim Pokéball-Laden:', error);
-  }
+const updateQuery = () => {
+  emit('updateSearchQuery', searchQuery.value);
+};
+const toggleShiny = () => {
+  emit('toggleShiny');
 };
 
-onMounted(loadRandomBall);
-watch(() => route.fullPath, () => {
-  loadRandomBall();
+// Zufälliger Pokéball
+const pokeballNames = [
+  'poke-ball', 'great-ball', 'ultra-ball', 'master-ball', 'dusk-ball',
+  'luxury-ball', 'quick-ball', 'heal-ball', 'repeat-ball', 'net-ball',
+  'nest-ball', 'timer-ball', 'premier-ball', 'safari-ball'
+];
+const pokeballName = pokeballNames[Math.floor(Math.random() * pokeballNames.length)];
+const pokeballSprite = `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${pokeballName}.png`;
+
+onMounted(() => {
+  console.log('[Header] Zufälliger Pokéball:', pokeballName);
 });
 </script>
+
 <style scoped>
 .header {
   position: fixed;
   top: 0;
-  width: 100%;
-  z-index: 1000;
+  left: 0;
+  right: 0;
+  height: 70px;
   background-color: white;
-  padding: 12px 16px;
+  padding: 10px 20px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+  z-index: 1000;
   box-sizing: border-box;
 }
 
-.logo-container {
+.left {
   display: flex;
   align-items: center;
-  cursor: pointer;
-}
-.logo {
-  width: 36px;
-  height: 36px;
-  margin-right: 8px;
-}
-.logo-text {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: var(--primary-red);
 }
 
-.search-wrapper {
+.pokeball {
+  width: 40px;
+  height: 40px;
+  margin-right: 10px;
+}
+
+.title {
+  font-size: 1.6rem;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.search-area {
+  flex-grow: 1;
   display: flex;
-  align-items: center;
-  flex: 1;
-  gap: 10px;
-  max-width: 700px;
+  justify-content: center;
+  margin: 0 20px;
 }
 
 .search-input {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 10px;
+  padding: 6px;
   font-size: 16px;
+  width: 250px;
   border: 1px solid #ccc;
-  border-radius: 6px;
-  box-sizing: border-box;
+  border-radius: 4px;
 }
 
 .styled-button {
-  white-space: nowrap;
-  background-color: var(--primary-red);
-  border: none;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 5px;
-  font-weight: bold;
+  background-color: #f0f0f0;
+  border: 1px solid #ccc;
+  padding: 5px 10px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-.styled-button:hover {
-  background-color: #d32f2f;
 }
 
+.styled-button:hover {
+  background-color: #e0e0e0;
+}
 </style>

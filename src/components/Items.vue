@@ -38,7 +38,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import PokeAPI from '@/services/pokeapi';
+import { getCachedData, setCachedList } from '@/utils/cache.js';
 import { preloadSprites } from '@/utils/preloadSprite.js';
+import { useErrorToast } from '@/composables/useErrorToast.js';
+
+const toast = useErrorToast();
 
 const items = ref([]);
 const isLoaded = ref(false);
@@ -55,20 +59,30 @@ const paginatedItems = computed(() =>
 
 const changePage = async (page) => {
   currentPage.value = page;
-
   const currentImages = paginatedItems.value.map(item => item.image).filter(Boolean);
   await preloadSprites(currentImages);
 };
 
 onMounted(async () => {
+  const cached = getCachedData('items');
+  if (cached) {
+    items.value = cached;
+    isLoaded.value = true;
+    const firstImages = paginatedItems.value.map(i => i.image).filter(Boolean);
+    await preloadSprites(firstImages);
+    return;
+  }
+
   try {
     const response = await PokeAPI.getItems();
     items.value = response.data;
+    setCachedList('items', items.value);
 
     const firstImages = items.value.slice(0, pageSize).map(i => i.image).filter(Boolean);
     await preloadSprites(firstImages);
   } catch (error) {
-    console.error('Fehler beim Laden der Items:', error);
+    toast.show('Fehler beim Laden der Items!');
+    console.error(error);
   } finally {
     isLoaded.value = true;
   }

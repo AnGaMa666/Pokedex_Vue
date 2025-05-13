@@ -1,139 +1,143 @@
 import axios from 'axios';
 import { preloadSpritesInBatches } from '@/utils/preloadSprite.js';
+
 const apiClient = axios.create({
     baseURL: 'https://pokeapi.co/api/v2',
     withCredentials: false,
     headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': 'application/json',
     },
 });
 
 export default {
-    getPokemons(limit = 1025, offset = 0) {
-        return apiClient.get(`/pokemon?limit=${limit}&offset=${offset}`);
+    async getPokemons(limit = 1025, offset = 0) {
+        const response = await apiClient.get(`/pokemon?limit=${limit}&offset=${offset}`);
+        const results = response.data.results;
+
+        const pokemons = results.map((pokemon, index) => ({
+            ...pokemon,
+            id: index + 1,
+            defaultImage: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${index + 1}.png`,
+            shinyImage: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${index + 1}.png`,
+        }));
+
+        const spriteUrls = pokemons.flatMap(p => [p.defaultImage, p.shinyImage]).filter(Boolean);
+        await preloadSpritesInBatches(spriteUrls, 25, 100);
+
+        return { data: pokemons };
     },
+
     getPokemonDetails(name) {
         return apiClient.get(`/pokemon/${name}`);
     },
+
     getPokemonSpecies(name) {
         return apiClient.get(`/pokemon-species/${name}`);
     },
+
     getEvolutionChain(url) {
         return apiClient.get(url);
     },
-    getPokemonImmunityForm(types) {
-        const typePromises = types.map(type => apiClient.get(`/type/${type.type.name}`));
-        return Promise.all(typePromises).then(responses => {
-            const immunities = responses.flatMap(response => response.data.damage_relations.no_damage_from.map(type => type.name));
-            return Array.from(new Set(immunities));
-        });
-    },
-    getPokemonWeaknesses2(types) {
-        const typePromises = types.map(type => apiClient.get(`/type/${type.type.name}`));
-        return Promise.all(typePromises).then(responses => {
-            const weaknesses = responses.flatMap(response => response.data.damage_relations.double_damage_from.map(type => type.name));
-            return Array.from(new Set(weaknesses));
-        });
-    },
-    getPokemonWeaknesses05(types) {
-        const typePromises = types.map(type => apiClient.get(`/type/${type.type.name}`));
-        return Promise.all(typePromises).then(responses => {
-            const weaknesses = responses.flatMap(response => response.data.damage_relations.half_damage_from.map(type => type.name));
-            return Array.from(new Set(weaknesses));
-        });
-    },
-    getPokemonImmunityTo(types) {
-        const typePromises = types.map(type => apiClient.get(`/type/${type.type.name}`));
-        return Promise.all(typePromises).then(responses => {
-            const immunities = responses.flatMap(response => response.data.damage_relations.no_damage_to.map(type => type.name));
-            return Array.from(new Set(immunities));
-        });
-    },
-    getPokemonEffectiv05(types) {
-        const typePromises = types.map(type => apiClient.get(`/type/${type.type.name}`));
-        return Promise.all(typePromises).then(responses => {
-            const effects = responses.flatMap(response => response.data.damage_relations.half_damage_to.map(type => type.name));
-            return Array.from(new Set(effects));
-        });
-    },
-    getPokemonEffectiv2(types) {
-        const typePromises = types.map(type => apiClient.get(`/type/${type.type.name}`));
-        return Promise.all(typePromises).then(responses => {
-            const effects = responses.flatMap(response => response.data.damage_relations.double_damage_to.map(type => type.name));
-            return Array.from(new Set(effects));
-        });
-    },
-    getPokemonAbilities(abilities) {
-        const abilityPromises = abilities.map(ability => apiClient.get(ability.ability.url));
-        return Promise.all(abilityPromises).then(responses => responses.map(response => response.data));
-    },
-    getLanguageData(url) {
+
+    async getMoveDetailsByUrl(url) {
         return apiClient.get(url);
     },
-    getPokemonDetailsByUrl(url) {
-        return apiClient.get(url);
-    },
-    getMoveDetails(url) {
-        return apiClient.get(url);
-    },
-    getMoves() {
-        return apiClient.get('/move?limit=1000');
+
+    async getMoves() {
+        const response = await apiClient.get('/move?limit=5000');
+        const moves = response.data.results;
+
+        const detailedMoves = await Promise.all(
+            moves.map(async move => {
+                try {
+                    const moveDetails = await apiClient.get(`/move/${move.name}`);
+                    return {
+                        name: move.name,
+                        type: moveDetails.data.type.name,
+                        generation: moveDetails.data.generation?.name || 'unknown'
+                    };
+                } catch (error) {
+                    console.warn(`[PokeAPI] Fehler bei Move "${move.name}":`, error.message);
+                    return {
+                        name: move.name,
+                        type: 'unknown',
+                        generation: 'unknown'
+                    };
+                }
+            })
+        );
+
+        return { data: detailedMoves };
     },
 
     async getItems(limit = 1000) {
         const response = await apiClient.get(`/item?limit=${limit}`);
         const items = response.data.results;
 
-        // Entferne Beeren
         const filtered = items.filter(item => !item.name.includes('berry'));
+        const detailedItems = [];
 
-        const detailedItems = await Promise.all(
-            filtered.map(item =>
-                apiClient.get(item.url)
-                    .then(res => ({
-                        name: item.name,
-                        image: res.data.sprites?.default || '',
-                    }))
-                    .catch(() => ({
-                        name: item.name,
-                        image: '',
-                    }))
-            )
-        );
+        const batchSize = 25;
+        for (let i = 0; i < filtered.length; i += batchSize) {
+            const batch = filtered.slice(i, i + batchSize);
 
-        const imageUrls = detailedItems.map(item => item.image).filter(Boolean);
-        await preloadSpritesInBatches(imageUrls);
+            const batchResults = await Promise.all(
+                batch.map(item =>
+                    apiClient.get(item.url)
+                        .then(res => ({
+                            name: item.name,
+                            image: res.data.sprites?.default || '',
+                        }))
+                        .catch(() => ({
+                            name: item.name,
+                            image: '',
+                        }))
+                )
+            );
+
+            detailedItems.push(...batchResults);
+
+            const imageUrls = batchResults.map(item => item.image).filter(Boolean);
+            await preloadSpritesInBatches(imageUrls, 10, 50);
+        }
 
         return { data: detailedItems };
     },
 
-
-    async getBerries(limit = 300) {
+    async getBerries(limit = 100) {
         const response = await apiClient.get(`/berry?limit=${limit}`);
         const berries = response.data.results;
 
-        const detailedBerries = await Promise.all(
-            berries.map(async (berry) => {
-                try {
-                    const berryData = await apiClient.get(berry.url);
-                    const itemData = await apiClient.get(berryData.data.item.url);
-                    return {
-                        name: berry.name,
-                        image: itemData.data.sprites?.default || '',
-                    };
-                } catch {
-                    return {
-                        name: berry.name,
-                        image: '',
-                    };
-                }
-            })
-        );
+        const detailedBerries = [];
 
-        const { preloadSpritesInBatches } = await import('@/utils/preloadSprite.js');
-        const imageUrls = detailedBerries.map((berry) => berry.image).filter(Boolean);
-        await preloadSpritesInBatches(imageUrls);
+        const batchSize = 20;
+        for (let i = 0; i < berries.length; i += batchSize) {
+            const batch = berries.slice(i, i + batchSize);
+
+            const batchResults = await Promise.all(
+                batch.map(async berry => {
+                    try {
+                        const berryData = await apiClient.get(berry.url);
+                        const itemData = await apiClient.get(berryData.data.item.url);
+                        return {
+                            name: berry.name,
+                            image: itemData.data.sprites?.default || '',
+                        };
+                    } catch {
+                        return {
+                            name: berry.name,
+                            image: '',
+                        };
+                    }
+                })
+            );
+
+            detailedBerries.push(...batchResults);
+
+            const spriteUrls = batchResults.map(b => b.image).filter(Boolean);
+            await preloadSpritesInBatches(spriteUrls, 10, 50);
+        }
 
         return { data: detailedBerries };
     }

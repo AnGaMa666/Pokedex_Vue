@@ -19,21 +19,37 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import PokeAPI from '@/services/pokeapi';
+import { getCachedData, setCachedList } from '@/utils/cache.js';
+import { preloadSprites } from '@/utils/preloadSprite.js';
+import { useErrorToast } from '@/composables/useErrorToast.js';
+
+const toast = useErrorToast();
 
 const berries = ref([]);
 const isLoaded = ref(false);
 
 onMounted(async () => {
+  const cached = getCachedData('berries');
+  if (cached) {
+    berries.value = cached;
+    isLoaded.value = true;
+    return;
+  }
+
   try {
     const response = await PokeAPI.getBerries();
     berries.value = response.data;
+    await preloadSprites(berries.value.map(b => b.image).filter(Boolean));
+    setCachedList('berries', berries.value);
   } catch (error) {
-    console.error('Fehler beim Laden der Beeren:', error);
+    toast.show('Fehler beim Laden der Beeren!');
+    console.error(error);
   } finally {
     isLoaded.value = true;
   }
 });
 </script>
+
 
 <style scoped>
 .berry-grid {

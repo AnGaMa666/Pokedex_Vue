@@ -6,6 +6,7 @@
 
 <script setup>
 import { computed } from 'vue';
+import { TypeColors } from '../utils/colors.js';
 
 const props = defineProps({
   types: {
@@ -15,43 +16,18 @@ const props = defineProps({
   },
 });
 
-const typeColors = {
-  fire: 'lightcoral',
-  water: 'lightblue',
-  grass: 'lightgreen',
-  electric: 'lightyellow',
-  ice: 'lightcyan',
-  fighting: 'lightpink',
-  poison: 'mediumorchid',
-  ground: 'burlywood',
-  flying: 'lightskyblue',
-  psychic: 'lightcoral',
-  bug: 'lightgreen',
-  rock: 'lightgray',
-  ghost: 'lightsteelblue',
-  dark: 'darkgray',
-  dragon: 'mediumpurple',
-  steel: 'lightgray',
-  fairy: 'lightpink',
-  normal: 'lightgray',
-};
-
 const typeStyle = computed(() => {
   if (props.types.length === 1) {
-    console.log('hello1');
-    console.log(props.types[0]);
+    const name = props.types[0]?.type?.name;
     return {
-      backgroundColor: typeColors[props.types[0]],
+      backgroundColor: TypeColors[name] || 'transparent',
     };
   } else if (props.types.length === 2) {
-    const color1 = typeColors[props.types[0]];
-    const color2 = typeColors[props.types[1]];
-    console.log('hello2');
-    console.log(color1);
-    console.log(color2);
+    const color1 = TypeColors[props.types[0]?.type?.name] || 'transparent';
+    const color2 = TypeColors[props.types[1]?.type?.name] || 'transparent';
     return {
       background: `linear-gradient(to right, ${color1}, ${color2})`,
-    }
+    };
   }
   return {};
 });

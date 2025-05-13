@@ -54,7 +54,6 @@ const selectPokemon = (pokemon) => {
 onMounted(fetchPokemons);
 
 watch(props, () => {
-  // React to changes in props
 });
 </script>
 

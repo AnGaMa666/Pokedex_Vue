@@ -1,27 +1,33 @@
 <template>
   <div class="pokedex-view">
-    <Header
-        :searchQuery="searchQuery"
-        @updateSearchQuery="updateSearchQuery"
-        @toggleShiny="toggleShiny"
-        :isShiny="isShiny"
-    />
-    <div class="main-container">
-      <Navbar />
-      <div class="content-container">
-        <Pokedex
-            :searchQuery="searchQuery"
-            :isShiny="isShiny"
-            @select="selectPokemon"
-        />
-        <div class="details-container">
+    <Navbar />
+    <div class="page-wrapper">
+      <Header
+          :searchQuery="searchQuery"
+          @updateSearchQuery="updateSearchQuery"
+          @toggleShiny="toggleShiny"
+          :isShiny="isShiny"
+          :showSearch="true"
+      />
+
+      <div class="horizontal-layout">
+        <div class="pokedex-column">
+          <Pokedex
+              :searchQuery="searchQuery"
+              :isShiny="isShiny"
+              @select="selectPokemon"
+          />
+        </div>
+
+        <div class="details-column" v-if="selectedPokemon">
           <PokemonDetails
-              v-if="selectedPokemon"
               :pokemon="selectedPokemon"
               :isShiny="isShiny"
           />
+        </div>
+
+        <div class="moves-column" v-if="selectedPokemonDetails?.moves">
           <MoveList
-              v-if="selectedPokemonDetails && selectedPokemonDetails.moves"
               :pokemonDetails="selectedPokemonDetails"
           />
         </div>
@@ -58,7 +64,7 @@ const selectPokemon = async (pokemon) => {
     const data = await response.json();
     selectedPokemonDetails.value = data;
   } catch (error) {
-    console.error('Error selecting Pokémon:', error);
+    console.error('[PokedexViewPage] Fehler beim Laden des Pokémon:', error);
   }
 };
 </script>
@@ -66,21 +72,50 @@ const selectPokemon = async (pokemon) => {
 <style scoped>
 .pokedex-view {
   display: flex;
-  flex-direction: column;
-}
-.main-container {
-  display: flex;
-  margin-top: 60px;
-}
-.content-container {
-  display: flex;
-  justify-content: space-between;
-  height: calc(100vh - 60px);
+  height: 100vh;
   overflow: hidden;
-  margin-left: 200px;
 }
-.details-container {
+
+.page-wrapper {
   flex: 1;
   display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.horizontal-layout {
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 70px); /* Höhe des Headers */
+  overflow: hidden;
+}
+
+/* Linke Spalte: Pokedex direkt neben Navbar */
+.pokedex-column {
+  width: 200px;
+  overflow-y: auto;
+  border-right: 1px solid #ccc;
+  background-color: #fafafa;
+  box-sizing: border-box;
+  padding: 10px;
+}
+
+/* Mitte: Details */
+.details-column {
+  width: 480px;
+  overflow-y: auto;
+  background-color: #fff;
+  padding: 20px;
+  box-sizing: border-box;
+  border-right: 1px solid #ccc;
+}
+
+/* Rechte Spalte: Moves */
+.moves-column {
+  flex: 1;
+  overflow-y: auto;
+  background-color: #f9f9f9;
+  padding: 20px;
+  box-sizing: border-box;
 }
 </style>
