@@ -1,5 +1,9 @@
 <template>
-  <article class="pokemon-details" :style="detailStyle" :aria-busy="loading">
+  <article
+    class="pokemon-details"
+    :style="detailsStyle"
+    :aria-busy="loading"
+  >
     <p v-if="loading" class="status-message" role="status">
       Loading Pokémon details…
     </p>
@@ -9,30 +13,28 @@
     </p>
 
     <template v-else-if="pokemonDetails">
-      <header class="details-hero">
-        <div class="hero-copy">
-          <p class="eyebrow">National Pokédex #{{ formatPokemonId(pokemonDetails.id) }}</p>
-          <h2>{{ formatPokemonName(pokemonDetails.name) }}</h2>
+      <header class="details-header">
+        <div>
+          <p class="eyebrow">#{{ formatResourceId(pokemonDetails.id) }}</p>
+          <h2>{{ formatResourceName(pokemonDetails.name) }}</h2>
           <div class="type-list" aria-label="Pokémon types">
             <span
               v-for="typeEntry in pokemonDetails.types"
               :key="typeEntry.type.name"
               class="type-badge"
-              :style="{ '--badge-color': getTypeColor(typeEntry.type.name) }"
+              :style="{ backgroundColor: getTypeColor(typeEntry.type.name) }"
             >
-              {{ formatPokemonName(typeEntry.type.name) }}
+              {{ formatResourceName(typeEntry.type.name) }}
             </span>
           </div>
         </div>
-
-        <div class="sprite-stage">
-          <span v-if="isShiny" class="shiny-label">Shiny</span>
+        <div class="sprite-frame">
           <img
             v-if="spriteUrl"
             :src="spriteUrl"
-            :alt="`${formatPokemonName(pokemonDetails.name)} ${isShiny ? 'shiny' : 'normal'} sprite`"
-            width="192"
-            height="192"
+            :alt="`${formatResourceName(pokemonDetails.name)} ${isShiny ? 'shiny' : 'normal'} sprite`"
+            width="180"
+            height="180"
           >
         </div>
       </header>
@@ -79,40 +81,45 @@
 
       <section v-if="evolutionStages.length" class="evolution-section">
         <div class="section-heading">
-          <div>
-            <p>Growth path</p>
-            <h3>Evolution chain</h3>
-          </div>
-          <span>{{ evolutionChain.length }} forms</span>
+          <h3>Evolution chain</h3>
+          <span>Sprites are derived from existing resource IDs</span>
         </div>
-
-        <ol class="evolution-chain">
-          <li
-            v-for="stage in evolutionStages"
-            :key="stage.stage"
+        <div class="evolution-stages">
+          <div
+            v-for="(stage, stageIndex) in evolutionStages"
+            :key="stageIndex"
             class="evolution-stage-group"
           >
-            <span class="evolution-stage-label">Stage {{ stage.stage + 1 }}</span>
-            <div class="evolution-options">
-              <article
-                v-for="evolution in stage.pokemon"
-                :key="evolution.name"
+            <span class="stage-label">Stage {{ stageIndex + 1 }}</span>
+            <ul class="evolution-stage-list">
+              <li
+                v-for="evolution in stage"
+                :key="`${evolution.stage}-${evolution.name}`"
                 class="evolution-item"
-                :class="{ 'is-current': evolution.name === pokemonDetails.name }"
               >
                 <img
                   v-if="evolution.sprite"
                   :src="evolution.sprite"
-                  :alt="`${formatPokemonName(evolution.name)} sprite`"
-                  width="104"
-                  height="104"
+                  :alt="`${formatResourceName(evolution.name)} sprite`"
+                  width="96"
+                  height="96"
                   loading="lazy"
                 >
-                <span>{{ formatPokemonName(evolution.name) }}</span>
-              </article>
-            </div>
-          </li>
-        </ol>
+                <strong>{{ formatResourceName(evolution.name) }}</strong>
+                <span v-if="evolution.method" class="evolution-method">
+                  {{ evolution.method }}
+                </span>
+              </li>
+            </ul>
+            <span
+              v-if="stageIndex < evolutionStages.length - 1"
+              class="stage-arrow"
+              aria-hidden="true"
+            >
+              ↓
+            </span>
+          </div>
+        </div>
       </section>
     </template>
   </article>
@@ -121,6 +128,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import PokeAPI from '@/services/pokeapi';
+import {
+  formatResourceId,
+  formatResourceName,
+  getResourceId,
+} from '@/utils/resource';
+import { getTypeColor, getTypeGradient } from '@/utils/typeColors';
 
 const props = defineProps({
   pokemon: {
@@ -134,27 +147,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['detailsLoaded']);
-
-const typeColors = {
-  bug: '#92a83e',
-  dark: '#5b5365',
-  dragon: '#5f63d3',
-  electric: '#d8ad22',
-  fairy: '#d875a7',
-  fighting: '#b2473f',
-  fire: '#dc5f36',
-  flying: '#7894d0',
-  ghost: '#62588f',
-  grass: '#529b4c',
-  ground: '#c49d4c',
-  ice: '#62aaaa',
-  normal: '#858a86',
-  poison: '#925095',
-  psychic: '#d94f78',
-  rock: '#9e8840',
-  steel: '#82919c',
-  water: '#477cc3',
-};
 
 const emptyDamageRelations = () => ({
   immunities: [],
@@ -171,8 +163,6 @@ const loading = ref(false);
 const errorMessage = ref('');
 let activeRequestId = 0;
 
-const getTypeColor = (typeName) => typeColors[typeName] || '#64748b';
-
 const spriteUrl = computed(() => {
   if (!pokemonDetails.value) {
     return '';
@@ -185,53 +175,45 @@ const spriteUrl = computed(() => {
   return pokemonDetails.value.sprites.front_default || '';
 });
 
-const detailStyle = computed(() => {
-  const types = pokemonDetails.value?.types || [];
-  const primaryType = types[0]?.type?.name;
-  const secondaryType = types[1]?.type?.name || primaryType;
+const detailsStyle = computed(() => {
+  if (!pokemonDetails.value?.types?.length) {
+    return {};
+  }
+
+  const gradient = getTypeGradient(pokemonDetails.value.types);
+  const primaryColor = getTypeColor(pokemonDetails.value.types[0]?.type?.name);
 
   return {
-    '--primary-type': getTypeColor(primaryType),
-    '--secondary-type': getTypeColor(secondaryType),
+    '--pokemon-gradient': gradient,
+    '--pokemon-primary': primaryColor,
   };
 });
 
 const evolutionStages = computed(() => {
-  const stages = new Map();
+  const groupedStages = [];
 
-  evolutionChain.value.forEach((evolution) => {
-    if (!stages.has(evolution.stage)) {
-      stages.set(evolution.stage, []);
-    }
+  for (const evolution of evolutionChain.value) {
+    groupedStages[evolution.stage] ||= [];
+    groupedStages[evolution.stage].push(evolution);
+  }
 
-    stages.get(evolution.stage).push(evolution);
-  });
-
-  return [...stages.entries()]
-    .sort(([firstStage], [secondStage]) => firstStage - secondStage)
-    .map(([stage, pokemon]) => ({ stage, pokemon }));
+  return groupedStages.filter(Boolean);
 });
-
-const formatPokemonId = (id) => String(id).padStart(4, '0');
-
-const formatPokemonName = (name) => {
-  return name
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
 
 const formatList = (values) => {
   if (!values.length) {
     return 'None';
   }
 
-  return values.map(formatPokemonName).join(', ');
+  return values.map(formatResourceName).join(', ');
 };
 
 const formatAbilities = (abilities) => {
   return abilities
-    .map((abilityEntry) => formatPokemonName(abilityEntry.ability.name))
+    .map((abilityEntry) => {
+      const abilityName = formatResourceName(abilityEntry.ability.name);
+      return abilityEntry.is_hidden ? `${abilityName} (hidden)` : abilityName;
+    })
     .join(', ');
 };
 
@@ -247,31 +229,100 @@ const getFlavorText = (entries, language) => {
   return entry.flavor_text.replace(/[\n\f]+/g, ' ');
 };
 
-const resolveEvolutionNode = async (node, stage) => {
-  let sprite = null;
+const formatEvolutionMethod = (evolutionDetails = []) => {
+  const detail = evolutionDetails[0];
 
-  try {
-    const response = await PokeAPI.getPokemonDetails(node.species.name);
-    sprite = response.data.sprites.front_default;
-  } catch (requestError) {
-    console.error(`Failed to load evolution sprite for ${node.species.name}:`, requestError);
+  if (!detail) {
+    return '';
   }
 
-  const descendantGroups = await Promise.all(
-    node.evolves_to.map((childNode) => resolveEvolutionNode(childNode, stage + 1)),
-  );
+  const parts = [];
+  const trigger = detail.trigger?.name;
 
-  return [
-    {
-      name: node.species.name,
-      sprite,
-      stage,
-    },
-    ...descendantGroups.flat(),
-  ];
+  if (trigger === 'level-up') {
+    parts.push(detail.min_level ? `Level ${detail.min_level}` : 'Level up');
+  } else if (trigger === 'use-item') {
+    parts.push(`Use ${formatResourceName(detail.item?.name || 'item')}`);
+  } else if (trigger === 'trade') {
+    parts.push('Trade');
+  } else if (trigger) {
+    parts.push(formatResourceName(trigger));
+  }
+
+  if (detail.held_item) {
+    parts.push(`holding ${formatResourceName(detail.held_item.name)}`);
+  }
+
+  if (detail.min_happiness) {
+    parts.push(`${detail.min_happiness}+ happiness`);
+  }
+
+  if (detail.min_affection) {
+    parts.push(`${detail.min_affection}+ affection`);
+  }
+
+  if (detail.min_beauty) {
+    parts.push(`${detail.min_beauty}+ beauty`);
+  }
+
+  if (detail.time_of_day) {
+    parts.push(`during ${detail.time_of_day}`);
+  }
+
+  if (detail.known_move) {
+    parts.push(`knowing ${formatResourceName(detail.known_move.name)}`);
+  }
+
+  if (detail.known_move_type) {
+    parts.push(`knowing a ${formatResourceName(detail.known_move_type.name)} move`);
+  }
+
+  if (detail.location) {
+    parts.push(`at ${formatResourceName(detail.location.name)}`);
+  }
+
+  if (detail.needs_overworld_rain) {
+    parts.push('while raining');
+  }
+
+  if (detail.turn_upside_down) {
+    parts.push('with the device upside down');
+  }
+
+  if (detail.party_species) {
+    parts.push(`with ${formatResourceName(detail.party_species.name)} in the party`);
+  }
+
+  if (detail.party_type) {
+    parts.push(`with a ${formatResourceName(detail.party_type.name)} Pokémon in the party`);
+  }
+
+  if (detail.trade_species) {
+    parts.push(`for ${formatResourceName(detail.trade_species.name)}`);
+  }
+
+  return parts.join(' · ');
 };
 
-const extractEvolutionChain = async (chain) => {
+const resolveEvolutionNode = (node, stage) => {
+  const speciesId = getResourceId(node.species?.url);
+  const sprite = speciesId
+    ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${speciesId}.png`
+    : '';
+  const currentEvolution = {
+    name: node.species.name,
+    sprite,
+    stage,
+    method: formatEvolutionMethod(node.evolution_details),
+  };
+  const descendants = (node.evolves_to || []).flatMap((childNode) => {
+    return resolveEvolutionNode(childNode, stage + 1);
+  });
+
+  return [currentEvolution, ...descendants];
+};
+
+const extractEvolutionChain = (chain) => {
   if (!chain?.species) {
     return [];
   }
@@ -299,7 +350,6 @@ const fetchPokemonDetails = async (name) => {
   try {
     const detailsResponse = await PokeAPI.getPokemonDetails(name);
     const details = detailsResponse.data;
-
     const [damageResult, speciesResult] = await Promise.allSettled([
       PokeAPI.getPokemonDamageRelations(details.types),
       PokeAPI.getPokemonSpecies(name),
@@ -323,7 +373,7 @@ const fetchPokemonDetails = async (name) => {
           const evolutionResponse = await PokeAPI.getEvolutionChain(
             resolvedSpecies.evolution_chain.url,
           );
-          resolvedEvolutionChain = await extractEvolutionChain(evolutionResponse.data.chain);
+          resolvedEvolutionChain = extractEvolutionChain(evolutionResponse.data.chain);
         } catch (requestError) {
           console.error('Failed to load the evolution chain:', requestError);
         }
@@ -361,169 +411,137 @@ watch(
   (name) => {
     fetchPokemonDetails(name);
   },
-  {
-    immediate: true,
-  },
+  { immediate: true },
 );
 </script>
 
 <style scoped>
 .pokemon-details {
   min-width: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--primary-type) 28%, #d5d9e1);
+  padding: clamp(22px, 4vw, 34px);
+  border: 1px solid color-mix(in srgb, var(--pokemon-primary, #64748b) 34%, #d5d9e1);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 18px 48px rgba(23, 32, 51, 0.11);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--pokemon-primary, #64748b) 10%, #ffffff), #ffffff 300px);
+  box-shadow: 0 16px 42px rgba(23, 32, 51, 0.08);
 }
 
 .status-message,
 .error-message {
   margin: 0;
-  padding: 32px;
+  padding: 24px 0;
 }
 
 .error-message {
   color: #991b1b;
 }
 
-.details-hero {
+.details-header {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   gap: 24px;
+  justify-content: space-between;
   align-items: center;
-  min-height: 238px;
-  padding: 28px;
   overflow: hidden;
+  padding: clamp(20px, 4vw, 34px);
+  border-radius: 20px;
   color: #ffffff;
-  background:
-    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.26), transparent 28%),
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--primary-type) 74%, #0f172a),
-      color-mix(in srgb, var(--secondary-type) 70%, #0f172a)
-    );
+  background: var(--pokemon-gradient, linear-gradient(135deg, #64748b, #334155));
+  box-shadow: 0 18px 34px color-mix(in srgb, var(--pokemon-primary, #64748b) 22%, transparent);
 }
 
-.details-hero::after {
+.details-header::after {
   position: absolute;
-  right: -74px;
+  right: -72px;
   bottom: -104px;
-  width: 260px;
-  height: 260px;
-  border: 48px solid rgba(255, 255, 255, 0.08);
+  width: 240px;
+  height: 240px;
+  border: 42px solid rgba(255, 255, 255, 0.12);
   border-radius: 50%;
   content: '';
 }
 
-.hero-copy,
-.sprite-stage {
+.details-header > * {
   position: relative;
   z-index: 1;
 }
 
-.details-hero h2 {
-  max-width: 760px;
+.details-header h2 {
   margin: 0;
-  font-size: clamp(2.35rem, 6vw, 4.3rem);
-  line-height: 0.98;
-  letter-spacing: -0.05em;
-  text-shadow: 0 3px 18px rgba(15, 23, 42, 0.24);
+  font-size: clamp(2.2rem, 6vw, 4.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  text-shadow: 0 3px 16px rgba(23, 32, 51, 0.2);
 }
 
 .eyebrow {
   margin: 0 0 10px;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.82);
   font-weight: 900;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+}
+
+.sprite-frame {
+  display: grid;
+  flex: 0 0 auto;
+  width: clamp(140px, 18vw, 210px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.sprite-frame img {
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 16px 18px rgba(23, 32, 51, 0.24));
 }
 
 .type-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 18px;
 }
 
 .type-badge {
   padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
   color: #ffffff;
   font-size: 0.82rem;
   font-weight: 900;
-  letter-spacing: 0.03em;
-  background: color-mix(in srgb, var(--badge-color) 70%, rgba(15, 23, 42, 0.56));
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.14);
-}
-
-.sprite-stage {
-  display: grid;
-  width: 202px;
-  height: 202px;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.36);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, rgba(255, 255, 255, 0.98) 0 46%, rgba(255, 255, 255, 0.28) 47% 49%, transparent 50%),
-    rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 0 30px rgba(255, 255, 255, 0.22),
-    0 22px 40px rgba(15, 23, 42, 0.24);
-  backdrop-filter: blur(8px);
-}
-
-.sprite-stage img {
-  width: 192px;
-  height: 192px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  filter: drop-shadow(0 14px 16px rgba(15, 23, 42, 0.28));
-}
-
-.shiny-label {
-  position: absolute;
-  z-index: 2;
-  top: 6px;
-  right: 6px;
-  padding: 5px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.56);
-  border-radius: 999px;
-  color: #581c87;
-  font-size: 0.7rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: #f3e8ff;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 6px 14px rgba(23, 32, 51, 0.14);
 }
 
 .descriptions {
-  padding: 20px 22px;
-  margin: 24px 24px 0;
-  border-left: 5px solid var(--primary-type);
-  border-radius: 12px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--primary-type) 9%, #ffffff), #f8fafc);
+  margin-top: 24px;
+  padding: 18px;
+  border-left: 4px solid var(--pokemon-primary, #dc2626);
+  border-radius: 10px;
+  background: #f8fafc;
 }
 
 .descriptions p {
   margin: 0;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 .descriptions p + p {
   margin-top: 10px;
-  color: #4b5563;
+  color: #596579;
 }
 
 .facts-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  padding: 0 24px;
   margin: 24px 0 0;
 }
 
@@ -531,204 +549,145 @@ watch(
   min-width: 0;
   padding: 15px;
   border: 1px solid #e3e6eb;
-  border-radius: 13px;
-  background: linear-gradient(145deg, #ffffff, #f8fafc);
-  box-shadow: 0 6px 14px rgba(23, 32, 51, 0.04);
+  border-radius: 12px;
+  background: #fbfcfe;
 }
 
 .facts-grid dt {
   margin-bottom: 5px;
-  color: #687386;
-  font-size: 0.72rem;
+  color: #7a8494;
+  font-size: 0.75rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
 .facts-grid dd {
   margin: 0;
   overflow-wrap: anywhere;
-  font-weight: 750;
+  color: #172033;
+  font-weight: 700;
   line-height: 1.45;
 }
 
 .evolution-section {
-  padding: 24px;
-  margin-top: 24px;
+  margin-top: 26px;
+  padding-top: 22px;
   border-top: 1px solid #e3e6eb;
-  background: #fbfcfe;
 }
 
 .section-heading {
   display: flex;
+  gap: 14px;
   justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 16px;
-}
-
-.section-heading p {
-  margin: 0 0 3px;
-  color: var(--primary-type);
-  font-size: 0.7rem;
-  font-weight: 900;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  align-items: baseline;
 }
 
 .section-heading h3 {
   margin: 0;
-  font-size: 1.3rem;
+  color: #172033;
+  font-size: 1.15rem;
 }
 
-.section-heading > span {
-  padding: 5px 9px;
-  border-radius: 999px;
-  color: #687386;
-  font-size: 0.76rem;
-  font-weight: 800;
-  background: #eef1f6;
+.section-heading span {
+  color: #7a8494;
+  font-size: 0.75rem;
 }
 
-.evolution-chain {
-  display: flex;
-  gap: 44px;
-  align-items: stretch;
-  padding: 4px 4px 12px;
-  margin: 0;
-  overflow-x: auto;
-  list-style: none;
-  scrollbar-color: #b9c0cc transparent;
-  scrollbar-width: thin;
+.evolution-stages {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .evolution-stage-group {
-  position: relative;
-  display: flex;
-  flex: 0 0 min(220px, 72vw);
-  flex-direction: column;
-  gap: 9px;
+  display: grid;
+  justify-items: center;
 }
 
-.evolution-stage-group:not(:last-child)::after {
-  position: absolute;
-  top: 50%;
-  right: -34px;
-  color: color-mix(in srgb, var(--primary-type) 62%, #64748b);
-  content: '→';
-  font-size: 1.65rem;
-  font-weight: 900;
-  transform: translateY(-50%);
-}
-
-.evolution-stage-label {
-  align-self: flex-start;
-  padding: 4px 8px;
-  border-radius: 999px;
-  color: #687386;
-  font-size: 0.68rem;
+.stage-label {
+  margin-bottom: 8px;
+  color: #7a8494;
+  font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: #eef1f6;
 }
 
-.evolution-options {
-  display: grid;
-  gap: 10px;
+.evolution-stage-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
 .evolution-item {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 116px;
-  padding: 8px 12px 8px 8px;
+  flex: 1 1 150px;
+  max-width: 220px;
+  justify-items: center;
+  padding: 14px;
   border: 1px solid #e3e6eb;
-  border-radius: 16px;
-  color: #344054;
-  font-weight: 800;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgba(23, 32, 51, 0.05);
-}
-
-.evolution-item.is-current {
-  border-color: color-mix(in srgb, var(--primary-type) 55%, #d5d9e1);
-  background: linear-gradient(145deg, color-mix(in srgb, var(--primary-type) 10%, #ffffff), #ffffff);
-  box-shadow: inset 4px 0 0 var(--primary-type), 0 8px 18px rgba(23, 32, 51, 0.06);
+  border-radius: 14px;
+  text-align: center;
+  background: #fbfcfe;
 }
 
 .evolution-item img {
-  width: 104px;
-  height: 104px;
+  width: 96px;
+  height: 96px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-@media (max-width: 680px) {
-  .details-hero {
-    grid-template-columns: 1fr;
-    min-height: 0;
-    padding: 24px;
+.evolution-item strong {
+  color: #172033;
+}
+
+.evolution-method {
+  margin-top: 6px;
+  color: #687386;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.stage-arrow {
+  margin: 6px 0;
+  color: var(--pokemon-primary, #64748b);
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+
+@media (max-width: 620px) {
+  .details-header {
+    align-items: flex-start;
   }
 
-  .sprite-stage {
-    width: 172px;
-    height: 172px;
-    margin: 0 auto;
+  .sprite-frame {
+    width: 112px;
   }
 
-  .sprite-stage img {
-    width: 164px;
-    height: 164px;
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 460px) {
+  .details-header {
+    flex-direction: column-reverse;
   }
 
-  .descriptions {
-    margin: 18px 18px 0;
+  .sprite-frame {
+    width: 96px;
   }
 
   .facts-grid {
     grid-template-columns: 1fr;
-    padding: 0 18px;
-    margin-top: 18px;
-  }
-
-  .evolution-section {
-    padding: 20px 18px;
-    margin-top: 18px;
-  }
-
-  .evolution-chain {
-    flex-direction: column;
-    gap: 38px;
-    overflow-x: visible;
-  }
-
-  .evolution-stage-group {
-    flex-basis: auto;
-  }
-
-  .evolution-stage-group:not(:last-child)::after {
-    top: auto;
-    right: 50%;
-    bottom: -32px;
-    content: '↓';
-    transform: translateX(50%);
-  }
-}
-
-@media (max-width: 420px) {
-  .details-hero h2 {
-    font-size: 2.25rem;
-  }
-
-  .evolution-item {
-    grid-template-columns: 88px minmax(0, 1fr);
-  }
-
-  .evolution-item img {
-    width: 88px;
-    height: 88px;
   }
 }
 </style>
