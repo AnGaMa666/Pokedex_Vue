@@ -1,29 +1,50 @@
-# first-projekt
+# Pokédex Vue
 
-This template should help get you started developing with Vue 3 in Vite.
+A responsive Pokédex built with Vue, Vite, Tailwind CSS and the public PokéAPI.
 
-## Recommended IDE Setup
+## Features
 
-[VSCode](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- Loads the complete Pokémon list reported by PokéAPI
+- Searches Pokémon by name or Pokédex number
+- Displays normal and shiny sprites
+- Shows types, measurements, abilities, descriptions and base experience
+- Calculates combined weaknesses, resistances and immunities for dual-type Pokémon
+- Displays complete branched evolution chains
+- Lists all available moves
+- Uses accessible buttons, labels, loading states and error messages
+- Provides responsive desktop, tablet and mobile layouts
 
-## Customize configuration
+## Requirements
 
-See [Vite Configuration Reference](https://vitejs.dev/config/).
+- Node.js 20.19 or newer, or Node.js 22.12 or newer
+- npm
 
-## Project Setup
+## Installation
 
 ```sh
 npm install
 ```
 
-### Compile and Hot-Reload for Development
+## Development
 
 ```sh
 npm run dev
 ```
 
-### Compile and Minify for Production
+The Vite development server is only intended for local development. Do not expose it to an untrusted network.
+
+## Production build
 
 ```sh
 npm run build
 ```
+
+## Preview the production build
+
+```sh
+npm run preview
+```
+
+## Data source
+
+Pokémon data is loaded from the public PokéAPI. Sprite images are loaded from the official PokeAPI sprites repository.
