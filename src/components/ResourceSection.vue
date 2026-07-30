@@ -13,7 +13,9 @@
 
       <p class="directory-description">{{ config.description }}</p>
 
-      <p v-if="loading" class="status-message" role="status">Loading {{ config.title.toLowerCase() }}…</p>
+      <p v-if="loading" class="status-message" role="status">
+        Loading {{ config.title.toLowerCase() }}…
+      </p>
 
       <div v-else-if="errorMessage" class="error-message" role="alert">
         <p>{{ errorMessage }}</p>
@@ -32,7 +34,8 @@
               class="resource-button"
               :class="{ 'is-selected': selectedResource?.id === resource.id }"
               :aria-current="selectedResource?.id === resource.id ? 'true' : undefined"
-              @click="selectedResource = resource"
+              :aria-controls="`${kind}-details`"
+              @click="selectResource(resource)"
             >
               <span class="resource-number">#{{ formatResourceId(resource.id) }}</span>
               <span class="resource-name">{{ formatResourceName(resource.name) }}</span>
@@ -49,10 +52,17 @@
       </template>
     </aside>
 
-    <div class="resource-detail" aria-live="polite">
+    <div
+      :id="`${kind}-details`"
+      ref="detailPanel"
+      class="resource-detail"
+      aria-live="polite"
+      tabindex="-1"
+    >
       <component
         :is="config.detailComponent"
         v-if="selectedResource"
+        :key="`${kind}-${selectedResource.id}`"
         :resource="selectedResource"
       />
       <div v-else class="empty-detail">
@@ -68,7 +78,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import PokeAPI from '@/services/pokeapi';
 import { formatResourceId, formatResourceName, getResourceId } from '@/utils/resource';
 import BerryDetails from './BerryDetails.vue';
@@ -103,7 +113,7 @@ const sectionConfigs = {
     singular: 'Item',
     kicker: 'Inventory data',
     symbol: '◆',
-    description: 'Browse every named item without preloading hundreds of item detail records or sprites.',
+    description: 'Browse regular items without berries, TMs, HMs or TRs. Item details and sprites are loaded only after selection.',
     emptyDescription: 'Select an item to inspect its price, category, attributes, sprite and in-game effect.',
     listMethod: () => PokeAPI.getItems(),
     detailComponent: ItemDetails,
@@ -121,8 +131,10 @@ const sectionConfigs = {
 };
 
 const PAGE_SIZE = 60;
+const MACHINE_ITEM_PATTERN = /^(?:tm|hm|tr)\d+$/;
 const resources = ref([]);
 const selectedResource = ref(null);
+const detailPanel = ref(null);
 const loading = ref(false);
 const errorMessage = ref('');
 const page = ref(1);
@@ -147,9 +159,18 @@ const pagedResources = computed(() => {
   return filteredResources.value.slice(startIndex, startIndex + PAGE_SIZE);
 });
 
+const isVisibleItem = (resource) => {
+  if (props.kind !== 'items') {
+    return true;
+  }
+
+  return !resource.name.endsWith('-berry') && !MACHINE_ITEM_PATTERN.test(resource.name);
+};
+
 const loadResources = async () => {
   loading.value = true;
   errorMessage.value = '';
+  selectedResource.value = null;
 
   try {
     const response = await config.value.listMethod();
@@ -158,13 +179,26 @@ const loadResources = async () => {
         ...resource,
         id: getResourceId(resource.url),
       }))
-      .filter((resource) => resource.id !== null)
+      .filter((resource) => resource.id !== null && isVisibleItem(resource))
       .sort((firstResource, secondResource) => firstResource.id - secondResource.id);
   } catch (requestError) {
     console.error(`Failed to load ${props.kind}:`, requestError);
     errorMessage.value = `The ${config.value.title.toLowerCase()} index could not be loaded.`;
   } finally {
     loading.value = false;
+  }
+};
+
+const selectResource = async (resource) => {
+  selectedResource.value = resource;
+  await nextTick();
+
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    detailPanel.value?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+    detailPanel.value?.focus({ preventScroll: true });
   }
 };
 
@@ -356,6 +390,8 @@ onMounted(loadResources);
 
 .resource-detail {
   min-width: 0;
+  scroll-margin-top: 176px;
+  outline: none;
 }
 
 .empty-detail {
