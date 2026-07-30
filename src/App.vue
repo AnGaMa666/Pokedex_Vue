@@ -1,40 +1,51 @@
 <template>
-  <div>
-    <Header :searchQuery="searchQuery" @updateSearchQuery="updateSearchQuery" @toggleShiny="toggleShiny" :isShiny="isShiny" />
-    <div class="main-container">
-      <Navbar />
-      <div class="content-container">
-        <Pokedex :searchQuery="searchQuery" @select="selectPokemon" />
-        <div class="details-container">
-          <PokemonDetails v-if="selectedPokemon" :pokemon="selectedPokemon" :isShiny="isShiny" />
-          <MoveList v-if="selectedPokemonDetails && selectedPokemonDetails.moves" :pokemonDetails="selectedPokemonDetails" />
-        </div>
-      </div>
-    </div>
+  <div class="app-shell">
+    <Header
+      :search-query="searchQuery"
+      :is-shiny="isShiny"
+      @update-search-query="updateSearchQuery"
+      @toggle-shiny="toggleShiny"
+    />
+    <main class="main-container">
+      <PokemonList :search-query="searchQuery" @select="selectPokemon" />
+      <section class="details-container" aria-live="polite">
+        <PokemonDetails
+          v-if="selectedPokemon"
+          :pokemon="selectedPokemon"
+          :is-shiny="isShiny"
+          @details-loaded="updateSelectedPokemonDetails"
+        />
+        <MoveList
+          v-if="selectedPokemonDetails?.moves?.length"
+          :pokemon-details="selectedPokemonDetails"
+        />
+        <p v-else-if="!selectedPokemon" class="empty-state">
+          Select a Pokémon to view its details.
+        </p>
+      </section>
+    </main>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue';
-import Pokedex from './components/Pokedex.vue';
-import PokemonDetails from './components/PokemonDetails.vue';
-import MoveList from './components/MoveList.vue';
 import Header from './components/Header.vue';
-import Navbar from './components/Navbar.vue';
+import MoveList from './components/MoveList.vue';
+import PokemonDetails from './components/PokemonDetails.vue';
+import PokemonList from './components/PokemonList.vue';
 
 const searchQuery = ref('');
 const selectedPokemon = ref(null);
-const selectedPokemonDetails = ref({});
-
+const selectedPokemonDetails = ref(null);
 const isShiny = ref(false);
 
-const selectPokemon = async (pokemon) => {
+const selectPokemon = (pokemon) => {
   selectedPokemon.value = pokemon;
+  selectedPokemonDetails.value = null;
+};
 
-  // Fetching the detailed data of the selected Pokémon
-  const response = await fetch(pokemon.url);
-  const data = await response.json();
-  selectedPokemonDetails.value = data;
+const updateSelectedPokemonDetails = (pokemonDetails) => {
+  selectedPokemonDetails.value = pokemonDetails;
 };
 
 const updateSearchQuery = (query) => {
@@ -47,21 +58,47 @@ const toggleShiny = () => {
 </script>
 
 <style scoped>
-.main-container {
-  display: flex;
-  margin-top: 60px;
+.app-shell {
+  min-height: 100vh;
 }
 
-.content-container {
-  display: flex;
-  justify-content: space-between;
-  height: calc(100vh - 60px);
-  overflow: hidden;
-  margin-left: 200px; /* Adjusted to accommodate the Navbar */
+.main-container {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: 24px;
+  min-height: 100vh;
+  padding: 88px 24px 24px;
 }
 
 .details-container {
-  flex: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 24px;
+  min-width: 0;
+  align-items: start;
+}
+
+.empty-state {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 32px;
+  border: 1px dashed #aeb6c3;
+  border-radius: 16px;
+  color: #4b5563;
+  text-align: center;
+  background: #ffffff;
+}
+
+@media (max-width: 1100px) {
+  .details-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .main-container {
+    grid-template-columns: 1fr;
+    padding: 144px 16px 16px;
+  }
 }
 </style>
