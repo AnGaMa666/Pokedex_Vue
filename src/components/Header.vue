@@ -1,6 +1,6 @@
 <template>
-  <header class="header">
-    <div class="brand">
+  <header class="header" :class="{ 'without-search': !showSearch }">
+    <a class="brand" href="#home" aria-label="Open Pokémon Explorer overview">
       <span class="brand-icon" aria-hidden="true">
         <img
           src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
@@ -11,34 +11,41 @@
       </span>
       <span class="brand-copy">
         <strong>Pokémon Explorer</strong>
-        <small>National Pokédex</small>
+        <small>{{ sectionLabel }}</small>
       </span>
-    </div>
+    </a>
 
-    <label class="search-field">
-      <span class="visually-hidden">Search Pokémon</span>
+    <label v-if="showSearch" class="search-field">
+      <span class="visually-hidden">{{ searchLabel }}</span>
       <span class="search-icon" aria-hidden="true"></span>
       <input
         :value="searchQuery"
         type="search"
         inputmode="search"
         autocomplete="off"
-        placeholder="Search by name or number"
+        :placeholder="searchPlaceholder"
         class="search-input"
         @input="emit('updateSearchQuery', $event.target.value)"
       >
     </label>
 
-    <button
-      type="button"
-      class="shiny-button"
-      :class="{ 'is-active': isShiny }"
-      :aria-pressed="isShiny"
-      @click="emit('toggleShiny')"
-    >
-      <span class="shiny-spark" aria-hidden="true">✦</span>
-      <span>{{ isShiny ? 'Shiny sprites on' : 'Shiny sprites off' }}</span>
-    </button>
+    <div class="header-actions">
+      <button
+        v-if="showShiny"
+        type="button"
+        class="shiny-button"
+        :class="{ 'is-active': isShiny }"
+        :aria-pressed="isShiny"
+        @click="emit('toggleShiny')"
+      >
+        <span class="shiny-spark" aria-hidden="true">✦</span>
+        <span>{{ isShiny ? 'Shiny sprites on' : 'Shiny sprites off' }}</span>
+      </button>
+      <span v-else class="cache-status" title="Lists and details are cached in this browser session">
+        <span aria-hidden="true">↻</span>
+        Session cache
+      </span>
+    </div>
   </header>
 </template>
 
@@ -51,6 +58,26 @@ defineProps({
   isShiny: {
     type: Boolean,
     default: false,
+  },
+  showSearch: {
+    type: Boolean,
+    default: true,
+  },
+  showShiny: {
+    type: Boolean,
+    default: false,
+  },
+  sectionLabel: {
+    type: String,
+    default: 'Overview',
+  },
+  searchLabel: {
+    type: String,
+    default: 'Search resources',
+  },
+  searchPlaceholder: {
+    type: String,
+    default: 'Search by name or number',
   },
 });
 
@@ -79,11 +106,23 @@ const emit = defineEmits([
   backdrop-filter: blur(18px);
 }
 
+.header.without-search {
+  grid-template-columns: auto 1fr auto;
+}
+
 .brand {
   display: inline-flex;
   gap: 12px;
   align-items: center;
   min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline: 3px solid rgba(220, 38, 38, 0.24);
+  outline-offset: 4px;
+  border-radius: 16px;
 }
 
 .brand-icon {
@@ -181,6 +220,11 @@ const emit = defineEmits([
   box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
 }
 
+.header-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .shiny-button {
   display: inline-flex;
   gap: 8px;
@@ -224,6 +268,26 @@ const emit = defineEmits([
   line-height: 1;
 }
 
+.cache-status {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #d5d9e1;
+  border-radius: 999px;
+  color: #596579;
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+  background: #f8fafc;
+}
+
+.cache-status span {
+  color: #15803d;
+  font-size: 1rem;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -240,10 +304,18 @@ const emit = defineEmits([
   .brand-copy small {
     display: none;
   }
+
+  .cache-status {
+    width: 42px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
+  }
 }
 
 @media (max-width: 760px) {
-  .header {
+  .header,
+  .header.without-search {
     grid-template-columns: 1fr auto;
     gap: 10px;
     padding: 10px 16px;
