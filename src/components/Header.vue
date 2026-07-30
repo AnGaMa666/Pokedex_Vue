@@ -1,11 +1,23 @@
 <template>
   <header class="header">
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <span>Pokédex</span>
+      <span class="brand-icon" aria-hidden="true">
+        <img
+          src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
+          alt=""
+          width="48"
+          height="48"
+        >
+      </span>
+      <span class="brand-copy">
+        <strong>Pokémon Explorer</strong>
+        <small>National Pokédex</small>
+      </span>
     </div>
+
     <label class="search-field">
       <span class="visually-hidden">Search Pokémon</span>
+      <span class="search-icon" aria-hidden="true"></span>
       <input
         :value="searchQuery"
         type="search"
@@ -16,13 +28,16 @@
         @input="emit('updateSearchQuery', $event.target.value)"
       >
     </label>
+
     <button
       type="button"
-      class="styled-button"
+      class="shiny-button"
+      :class="{ 'is-active': isShiny }"
       :aria-pressed="isShiny"
       @click="emit('toggleShiny')"
     >
-      {{ isShiny ? 'Show normal sprites' : 'Show shiny sprites' }}
+      <span class="shiny-spark" aria-hidden="true">✦</span>
+      <span>{{ isShiny ? 'Shiny sprites on' : 'Shiny sprites off' }}</span>
     </button>
   </header>
 </template>
@@ -52,74 +67,161 @@ const emit = defineEmits([
   top: 0;
   left: 0;
   display: grid;
-  grid-template-columns: auto minmax(220px, 680px) auto;
-  gap: 20px;
+  grid-template-columns: auto minmax(240px, 720px) auto;
+  gap: 24px;
   align-items: center;
   width: 100%;
-  min-height: 64px;
-  padding: 12px 24px;
-  border-bottom: 1px solid #d5d9e1;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 2px 12px rgba(23, 32, 51, 0.08);
-  backdrop-filter: blur(12px);
+  min-height: 72px;
+  padding: 10px max(24px, calc((100vw - 1680px) / 2 + 24px));
+  border-bottom: 1px solid rgba(213, 217, 225, 0.9);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 30px rgba(23, 32, 51, 0.09);
+  backdrop-filter: blur(18px);
 }
 
 .brand {
   display: inline-flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
+  min-width: 0;
 }
 
-.brand-mark {
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  border: 6px solid #dc2626;
-  border-radius: 50%;
-  background: #ffffff;
-  box-shadow: inset 0 0 0 2px #172033;
+.brand-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid #e3e6eb;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #ffffff, #f0f3f8);
+  box-shadow: 0 8px 18px rgba(23, 32, 51, 0.1);
+}
+
+.brand-icon img {
+  width: 42px;
+  height: 42px;
+  image-rendering: pixelated;
+}
+
+.brand-copy {
+  display: grid;
+  line-height: 1.1;
+}
+
+.brand-copy strong {
+  color: #172033;
+  font-size: 1.08rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.brand-copy small {
+  margin-top: 4px;
+  color: #687386;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
 }
 
 .search-field {
+  position: relative;
   min-width: 0;
+}
+
+.search-icon {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 15px;
+  width: 15px;
+  height: 15px;
+  border: 2px solid #687386;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translateY(-56%);
+}
+
+.search-icon::after {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  width: 7px;
+  height: 2px;
+  border-radius: 999px;
+  content: '';
+  background: #687386;
+  transform: rotate(45deg);
+  transform-origin: left center;
 }
 
 .search-input {
   width: 100%;
-  min-height: 42px;
-  padding: 9px 12px;
+  min-height: 46px;
+  padding: 10px 14px 10px 44px;
   border: 1px solid #b9c0cc;
-  border-radius: 10px;
+  border-radius: 14px;
   color: #172033;
-  background: #ffffff;
+  background: rgba(248, 250, 252, 0.92);
   outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.search-input:hover {
+  background: #ffffff;
 }
 
 .search-input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  border-color: #dc2626;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
 }
 
-.styled-button {
-  min-height: 42px;
+.shiny-button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
   padding: 9px 14px;
   border: 1px solid #b9c0cc;
-  border-radius: 10px;
-  font-weight: 700;
+  border-radius: 999px;
+  color: #344054;
+  font-weight: 800;
+  white-space: nowrap;
   cursor: pointer;
   background: #f8fafc;
+  transition:
+    border-color 160ms ease,
+    color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
 }
 
-.styled-button:hover {
-  background: #eef2f7;
+.shiny-button:hover {
+  border-color: #8c96a7;
+  background: #ffffff;
+  transform: translateY(-1px);
 }
 
-.styled-button:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.35);
+.shiny-button.is-active {
+  border-color: #7c3aed;
+  color: #5b21b6;
+  background: #f3e8ff;
+}
+
+.shiny-button:focus-visible {
+  outline: 3px solid rgba(124, 58, 237, 0.28);
   outline-offset: 2px;
+}
+
+.shiny-spark {
+  color: #7c3aed;
+  font-size: 1.1rem;
+  line-height: 1;
 }
 
 .visually-hidden {
@@ -134,6 +236,12 @@ const emit = defineEmits([
   border: 0;
 }
 
+@media (max-width: 900px) {
+  .brand-copy small {
+    display: none;
+  }
+}
+
 @media (max-width: 760px) {
   .header {
     grid-template-columns: 1fr auto;
@@ -146,8 +254,36 @@ const emit = defineEmits([
     grid-row: 2;
   }
 
-  .styled-button {
-    font-size: 0.875rem;
+  .shiny-button {
+    padding-inline: 12px;
+    font-size: 0.825rem;
+  }
+}
+
+@media (max-width: 460px) {
+  .brand-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand-icon img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .brand-copy strong {
+    font-size: 0.98rem;
+  }
+
+  .shiny-button span:last-child {
+    display: none;
+  }
+
+  .shiny-button {
+    width: 42px;
+    min-height: 42px;
+    justify-content: center;
+    padding: 0;
   }
 }
 </style>
