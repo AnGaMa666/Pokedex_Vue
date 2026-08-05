@@ -13,7 +13,65 @@ const ATTRIBUTE_TRANSLATIONS = {
     holdable: 'Tragbar',
     'holdable-passive': 'Passiver Trageeffekt',
     'holdable-active': 'Aktiver Trageeffekt',
-    underground: 'Im Untergrund',
+    underground: 'Im Untergrund einsetzbar',
+  },
+};
+
+const CATEGORY_TRANSLATIONS = {
+  de: {
+    'stat-boosts': 'Statuswertverstärker',
+    'effort-drop': 'Fleißwertsenker',
+    medicine: 'Medizin',
+    other: 'Sonstige Items',
+    'in-a-pinch': 'Notfallbeeren',
+    'picky-healing': 'Selektive Heilung',
+    'type-protection': 'Typschutz',
+    'baking-only': 'Backzutaten',
+    collectibles: 'Sammelgegenstände',
+    evolution: 'Entwicklungsitems',
+    spelunking: 'Höhlenerkundung',
+    'held-items': 'Trageitems',
+    choice: 'Wahlitems',
+    'effort-training': 'Fleißtraining',
+    'bad-held-items': 'Nachteilig wirkende Trageitems',
+    training: 'Trainingsitems',
+    plates: 'Tafeln',
+    'species-specific': 'Pokémon-spezifische Items',
+    'type-enhancement': 'Typverstärker',
+    'event-items': 'Event-Items',
+    gameplay: 'Spielmechanik-Items',
+    'plot-advancement': 'Storyitems',
+    unused: 'Nicht verwendete Items',
+    loot: 'Verkaufsgegenstände',
+    'all-mail': 'Briefpapier',
+    vitamins: 'Vitamine',
+    healing: 'Heilitems',
+    'pp-recovery': 'AP-Heilung',
+    revival: 'Belebungsitems',
+    'status-cures': 'Statusheilung',
+    mulch: 'Mulch',
+    'special-balls': 'Spezialbälle',
+    'standard-balls': 'Standardbälle',
+    'dex-completion': 'Pokédex-Vervollständigung',
+    scarves: 'Schals',
+    'all-machines': 'Technische Maschinen',
+    flutes: 'Flöten',
+    'apricorn-balls': 'Aprikokobälle',
+    'apricorn-box': 'Aprikokobox',
+    'data-cards': 'Datenkarten',
+    jewels: 'Juwelen',
+    'miracle-shooter': 'Wunderwerfer-Items',
+    'mega-stones': 'Mega-Steine',
+    memories: 'Discs',
+    'z-crystals': 'Z-Kristalle',
+    'species-candies': 'Pokémon-Bonbons',
+    'catching-bonus': 'Fangbonus-Items',
+    'dynamax-crystals': 'Dynamax-Kristalle',
+    'nature-mints': 'Wesen-Minzen',
+    'curry-ingredients': 'Curry-Zutaten',
+    'tera-shard': 'Tera-Stücke',
+    'sandwich-ingredients': 'Sandwich-Zutaten',
+    'picnic': 'Picknick-Items',
   },
 };
 
@@ -41,24 +99,33 @@ const uniqueNamedResources = (resources = []) => {
   return [...resourcesByName.values()];
 };
 
+const getExactLocalizedName = (names = [], language = 'en') => {
+  return names.find((entry) => entry.language?.name === language)?.name || '';
+};
+
 export const getLocalizedItemMetadataName = ({
   details = null,
   fallback = '',
   language = 'en',
   kind = 'category',
 } = {}) => {
-  const localizedName = getLocalizedName(details?.names, '', language);
+  const exactLocalizedName = getExactLocalizedName(details?.names, language);
 
-  if (localizedName) {
-    return localizedName;
+  if (exactLocalizedName) {
+    return exactLocalizedName;
   }
 
-  if (kind === 'attribute') {
-    const translatedAttribute = ATTRIBUTE_TRANSLATIONS[language]?.[fallback];
+  const translationDictionary = kind === 'attribute'
+    ? ATTRIBUTE_TRANSLATIONS[language]
+    : CATEGORY_TRANSLATIONS[language];
+  const translatedFallback = translationDictionary?.[fallback];
 
-    if (translatedAttribute) {
-      return translatedAttribute;
-    }
+  if (translatedFallback) {
+    return translatedFallback;
+  }
+
+  if (language === 'en') {
+    return getLocalizedName(details?.names, fallback, language);
   }
 
   return formatResourceName(fallback);
