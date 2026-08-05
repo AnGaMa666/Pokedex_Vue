@@ -11,18 +11,21 @@
     </div>
 
     <ul class="move-list">
-      <li
-        v-for="move in movesWithType"
-        :key="move.name"
-        class="move-item"
-        :style="{
-          backgroundColor: getMoveTypeColor(move.type),
-          color: getMoveTextColor(move.type),
-        }"
-      >
-        <strong>{{ move.label }}</strong>
-        <small v-if="move.type">{{ formatMoveName(move.type) }}</small>
-        <small v-else aria-hidden="true">…</small>
+      <li v-for="move in movesWithType" :key="move.name">
+        <button
+          type="button"
+          class="move-item"
+          :style="{
+            backgroundColor: getMoveTypeColor(move.type),
+            color: getMoveTextColor(move.type),
+          }"
+          :aria-label="`${move.label} ${t('resource.moves.singular')} öffnen`"
+          @click="openMove(move)"
+        >
+          <strong>{{ move.label }}</strong>
+          <small v-if="move.type">{{ formatMoveName(move.type) }}</small>
+          <small v-else aria-hidden="true">…</small>
+        </button>
       </li>
     </ul>
   </section>
@@ -40,6 +43,7 @@ const props = defineProps({
   },
 });
 
+const emit = defineEmits(['openResource']);
 const { t } = useI18n();
 
 const TYPE_COLORS = {
@@ -107,6 +111,13 @@ const moveEntries = computed(() => {
 
 const getMoveTypeColor = (type) => TYPE_COLORS[type] || '#f8f8f8';
 const getMoveTextColor = (type) => DARK_MOVE_TYPES.has(type) ? '#ffffff' : '#333333';
+
+const openMove = (move) => {
+  emit('openResource', {
+    kind: 'moves',
+    name: move.name,
+  });
+};
 
 const loadMoveTypes = async () => {
   const loadId = ++activeLoadId;
@@ -203,6 +214,7 @@ watch(
 .move-item {
   display: grid;
   gap: 3px;
+  width: 100%;
   min-width: 0;
   min-height: 54px;
   align-content: center;
@@ -211,7 +223,17 @@ watch(
   border-radius: 4px;
   overflow-wrap: anywhere;
   text-align: center;
+  cursor: pointer;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.move-item:hover {
+  filter: brightness(0.96);
+}
+
+.move-item:focus-visible {
+  outline: 3px solid #333333;
+  outline-offset: 2px;
 }
 
 .move-item strong {
@@ -232,6 +254,32 @@ watch(
   .move-list {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     max-height: 420px;
+  }
+}
+
+@media (max-width: 760px) {
+  .move-heading {
+    padding: 12px;
+  }
+
+  .move-heading h2 {
+    font-size: 1.15rem;
+  }
+
+  .move-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    max-height: min(52vh, 430px);
+    padding: 8px;
+  }
+
+  .move-item {
+    min-height: 48px;
+    padding: 7px 8px;
+  }
+
+  .move-item strong {
+    font-size: 0.82rem;
   }
 }
 </style>

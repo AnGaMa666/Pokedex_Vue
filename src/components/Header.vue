@@ -23,7 +23,8 @@
         type="search"
         inputmode="search"
         autocomplete="off"
-        :placeholder="searchPlaceholder"
+        :placeholder="searchLabel || searchPlaceholder"
+        :title="searchPlaceholder"
         class="search-input"
         @input="emit('updateSearchQuery', $event.target.value)"
       >
@@ -221,10 +222,6 @@ const { language, setLanguage, t } = useI18n();
   color: #172033;
   background: rgba(248, 250, 252, 0.92);
   outline: none;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background 160ms ease;
 }
 
 .search-input:hover {
@@ -279,17 +276,6 @@ const { language, setLanguage, t } = useI18n();
   white-space: nowrap;
   cursor: pointer;
   background: #f8fafc;
-  transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    background 160ms ease,
-    transform 160ms ease;
-}
-
-.shiny-button:hover {
-  border-color: #8c96a7;
-  background: #ffffff;
-  transform: translateY(-1px);
 }
 
 .shiny-button.is-active {
@@ -351,9 +337,11 @@ const { language, setLanguage, t } = useI18n();
 @media (max-width: 760px) {
   .header,
   .header.without-search {
-    grid-template-columns: 1fr auto;
-    gap: 10px;
-    padding: 10px 16px;
+    position: sticky;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 0;
+    padding: 8px 10px;
   }
 
   .search-field {
@@ -361,50 +349,58 @@ const { language, setLanguage, t } = useI18n();
     grid-row: 2;
   }
 
+  .search-input {
+    min-height: 40px;
+    padding-block: 7px;
+    padding-left: 40px;
+  }
+
+  .search-icon {
+    left: 13px;
+  }
+
   .header-actions {
     gap: 6px;
   }
 
   .language-select {
-    min-height: 42px;
-    padding-right: 28px;
+    width: 96px;
+    min-height: 38px;
+    padding: 6px 24px 6px 8px;
+    font-size: 0.78rem;
   }
 
   .shiny-button {
-    padding-inline: 12px;
-    font-size: 0.825rem;
-  }
-}
-
-@media (max-width: 500px) {
-  .brand-icon {
-    width: 42px;
-    height: 42px;
-  }
-
-  .brand-icon img {
     width: 38px;
-    height: 38px;
-  }
-
-  .brand-copy strong {
-    font-size: 0.98rem;
-  }
-
-  .language-select {
-    width: 64px;
-    padding-inline: 8px;
+    min-height: 38px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 4px;
   }
 
   .shiny-button span:last-child {
     display: none;
   }
+}
 
-  .shiny-button {
-    width: 42px;
-    min-height: 42px;
-    justify-content: center;
-    padding: 0;
+@media (max-width: 520px) {
+  .brand {
+    gap: 8px;
+  }
+
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 4px;
+  }
+
+  .brand-icon img {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand-copy {
+    display: none;
   }
 }
 </style>

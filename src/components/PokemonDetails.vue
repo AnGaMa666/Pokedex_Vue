@@ -107,7 +107,12 @@
                 >
                   <div class="transition-line">
                     <span class="transition-arrow" aria-hidden="true">↓</span>
-                    <span v-if="evolution.item" class="transition-item">
+                    <button
+                      v-if="evolution.item"
+                      type="button"
+                      class="transition-item"
+                      @click="openItem(evolution.item.name)"
+                    >
                       <img
                         :src="evolution.item.sprite"
                         :alt="formatResourceName(evolution.item.name)"
@@ -117,7 +122,7 @@
                         loading="lazy"
                       >
                       <strong>{{ formatResourceName(evolution.item.name) }}</strong>
-                    </span>
+                    </button>
                   </div>
                   <span v-if="evolution.method" class="transition-method">
                     {{ evolution.method }}
@@ -148,31 +153,34 @@
           <ul class="special-form-list">
             <li v-for="form in specialForms" :key="form.id" class="special-form-entry">
               <div
-                v-if="form.kind === 'mega'"
-                class="evolution-transition mega-transition"
-                :aria-label="t('pokemon.megaForm')"
+                class="evolution-transition special-transition"
+                :aria-label="getSpecialFormMethod(form)"
               >
                 <div class="transition-line">
                   <span class="transition-arrow" aria-hidden="true">↓</span>
-                  <span v-if="form.megaStone" class="transition-item">
+                  <button
+                    v-if="form.megaStone"
+                    type="button"
+                    class="transition-item"
+                    :aria-label="`${getMegaStoneLabel(form.megaStone)} öffnen`"
+                    @click="openItem(form.megaStone.name)"
+                  >
                     <img
                       :src="form.megaStone.sprite"
-                      :alt="formatResourceName(form.megaStone.name)"
+                      :alt="getMegaStoneLabel(form.megaStone)"
                       class="transition-item-sprite"
                       width="40"
                       height="40"
                       loading="lazy"
                     >
-                    <strong>{{ formatResourceName(form.megaStone.name) }}</strong>
-                  </span>
+                    <strong>{{ getMegaStoneLabel(form.megaStone) }}</strong>
+                  </button>
                 </div>
-                <span class="transition-method">{{ t('pokemon.megaForm') }}</span>
+                <span class="transition-method">{{ getSpecialFormMethod(form) }}</span>
               </div>
 
               <article class="special-form-item">
-                <span class="form-kind">
-                  {{ form.kind === 'mega' ? t('pokemon.megaForm') : t('pokemon.gmaxForm') }}
-                </span>
+                <span class="form-kind">{{ getSpecialFormMethod(form) }}</span>
                 <img
                   :src="getSpecialFormSprite(form)"
                   :alt="`${formatResourceName(form.name)} sprite`"
@@ -195,6 +203,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import { getEvolutionItem } from '@/utils/evolution';
+import { getFinalEvolutionSpeciesNames } from '@/utils/evolutionChain';
 import { getSpecialBattleForms } from '@/utils/pokemonForms';
 import {
   formatResourceId,
@@ -215,7 +224,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['detailsLoaded']);
+const emit = defineEmits(['detailsLoaded', 'openResource']);
 const { language, t } = useI18n();
 
 const emptyDamageRelations = () => ({
@@ -228,6 +237,8 @@ const emptyDamageRelations = () => ({
 const pokemonDetails = ref(null);
 const species = ref(null);
 const rawEvolutionChain = ref(null);
+const finalEvolutionSpecies = ref([]);
+const itemDetailsByName = ref({});
 const damageRelations = ref(emptyDamageRelations());
 const loading = ref(false);
 const hasError = ref(false);
@@ -423,11 +434,85 @@ const evolutionStages = computed(() => {
 });
 
 const specialForms = computed(() => {
-  return getSpecialBattleForms(species.value?.varieties || []);
+  const formsById = new Map();
+
+  for (const finalSpecies of finalEvolutionSpecies.value) {
+    for (const form of getSpecialBattleForms(finalSpecies.varieties || [])) {
+      formsById.set(form.id, {
+        ...form,
+        sourceSpecies: finalSpecies.name,
+      });
+    }
+  }
+
+  return [...formsById.values()];
 });
 
 const getSpecialFormSprite = (form) => {
   return props.isShiny ? form.shinySprite : form.sprite;
+};
+
+const getSpecialFormMethod = (form) => {
+  return form.kind === 'mega' ? t('pokemon.megaForm') : t('pokemon.gmaxForm');
+};
+
+const getMegaStoneLabel = (stone) => {
+  const details = itemDetailsByName.value[stone.name];
+  return getLocalizedName(details?.names, stone.name, language.value);
+};
+
+const openItem = (name) => {
+  emit('openResource', {
+    kind: 'items',
+    name,
+  });
+};
+
+const loadFinalEvolutionForms = async (resolvedSpecies, resolvedChain, requestId) => {
+  const finalNames = getFinalEvolutionSpeciesNames(resolvedChain);
+  const namesToLoad = finalNames.length ? finalNames : [resolvedSpecies.name];
+  const uniqueNames = [...new Set(namesToLoad)];
+
+  const speciesResults = await Promise.allSettled(
+    uniqueNames.map((name) => {
+      if (name === resolvedSpecies.name) {
+        return Promise.resolve({ data: resolvedSpecies });
+      }
+
+      return PokeAPI.getPokemonSpecies(name);
+    }),
+  );
+
+  if (requestId !== activeRequestId) {
+    return;
+  }
+
+  const resolvedFinalSpecies = speciesResults
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value.data);
+
+  finalEvolutionSpecies.value = resolvedFinalSpecies;
+
+  const stoneNames = [...new Set(
+    resolvedFinalSpecies
+      .flatMap((entry) => getSpecialBattleForms(entry.varieties || []))
+      .map((form) => form.megaStone?.name)
+      .filter(Boolean),
+  )];
+
+  const stoneResults = await Promise.allSettled(
+    stoneNames.map((name) => PokeAPI.getItemDetails(name)),
+  );
+
+  if (requestId !== activeRequestId) {
+    return;
+  }
+
+  itemDetailsByName.value = Object.fromEntries(
+    stoneResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => [result.value.data.name, result.value.data]),
+  );
 };
 
 const fetchPokemonDetails = async (name) => {
@@ -444,6 +529,8 @@ const fetchPokemonDetails = async (name) => {
   pokemonDetails.value = null;
   species.value = null;
   rawEvolutionChain.value = null;
+  finalEvolutionSpecies.value = [];
+  itemDetailsByName.value = {};
   damageRelations.value = emptyDamageRelations();
   emit('detailsLoaded', null);
 
@@ -461,8 +548,6 @@ const fetchPokemonDetails = async (name) => {
 
     if (damageResult.status === 'fulfilled') {
       resolvedDamageRelations = damageResult.value;
-    } else {
-      console.error('Failed to calculate Pokémon damage relations:', damageResult.reason);
     }
 
     if (speciesResult.status === 'fulfilled') {
@@ -478,8 +563,6 @@ const fetchPokemonDetails = async (name) => {
           console.error('Failed to load the evolution chain:', requestError);
         }
       }
-    } else {
-      console.error('Failed to load Pokémon species data:', speciesResult.reason);
     }
 
     if (requestId !== activeRequestId) {
@@ -491,6 +574,10 @@ const fetchPokemonDetails = async (name) => {
     rawEvolutionChain.value = resolvedEvolutionChain;
     damageRelations.value = resolvedDamageRelations;
     emit('detailsLoaded', details);
+
+    if (resolvedSpecies) {
+      void loadFinalEvolutionForms(resolvedSpecies, resolvedEvolutionChain, requestId);
+    }
   } catch (requestError) {
     if (requestId !== activeRequestId) {
       return;
@@ -572,7 +659,6 @@ watch(
   font-size: clamp(2.2rem, 6vw, 4.5rem);
   line-height: 0.95;
   letter-spacing: -0.045em;
-  text-shadow: 0 2px 12px rgba(255, 255, 255, 0.52);
 }
 
 .eyebrow {
@@ -599,7 +685,6 @@ watch(
   height: 90%;
   object-fit: contain;
   image-rendering: pixelated;
-  filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.18));
 }
 
 .type-list {
@@ -716,7 +801,7 @@ watch(
 .special-form-entry {
   display: grid;
   flex: 1 1 190px;
-  max-width: 260px;
+  max-width: 280px;
   justify-items: center;
 }
 
@@ -758,6 +843,21 @@ watch(
   align-items: center;
   min-width: 0;
   margin-left: 8px;
+  padding: 2px;
+  border: 0;
+  color: #333333;
+  cursor: pointer;
+  background: transparent;
+}
+
+.transition-item:hover strong,
+.transition-item:focus-visible strong {
+  text-decoration: underline;
+}
+
+.transition-item:focus-visible {
+  outline: 2px solid #333333;
+  outline-offset: 2px;
 }
 
 .transition-item-sprite {
@@ -804,11 +904,6 @@ watch(
   image-rendering: pixelated;
 }
 
-.special-form-entry {
-  flex-basis: 210px;
-  max-width: 280px;
-}
-
 .special-form-item img {
   width: 112px;
   height: 112px;
@@ -839,13 +934,41 @@ watch(
   background: #e0e0e0;
 }
 
-@media (max-width: 620px) {
+@media (max-width: 760px) {
+  .pokemon-details {
+    padding: 12px;
+  }
+
   .details-header {
-    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .details-header h2 {
+    font-size: clamp(1.8rem, 10vw, 2.8rem);
   }
 
   .sprite-frame {
-    width: 112px;
+    width: 96px;
+  }
+
+  .descriptions {
+    margin-top: 12px;
+    padding: 12px;
+  }
+
+  .facts-grid {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .facts-grid div {
+    padding: 10px;
+  }
+
+  .evolution-section {
+    margin-top: 16px;
+    padding-top: 14px;
   }
 
   .evolution-entry,
@@ -853,23 +976,24 @@ watch(
     flex-basis: 100%;
     max-width: 100%;
   }
+
+  .evolution-item,
+  .special-form-item {
+    padding: 10px;
+  }
 }
 
-@media (max-width: 460px) {
+@media (max-width: 420px) {
   .details-header {
-    flex-direction: column-reverse;
+    align-items: center;
   }
 
   .sprite-frame {
-    width: 96px;
+    width: 76px;
   }
 
   .facts-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .transition-line {
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .transition-item {
@@ -883,7 +1007,7 @@ watch(
   }
 
   .transition-item strong {
-    max-width: 74px;
+    max-width: 88px;
     font-size: 0.66rem;
   }
 }

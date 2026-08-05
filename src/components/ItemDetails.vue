@@ -1,16 +1,16 @@
 <template>
   <article class="detail-card item-detail" :aria-busy="loading">
-    <p v-if="loading" class="status-message" role="status">Loading item details…</p>
+    <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
 
     <div v-else-if="errorMessage" class="error-message" role="alert">
       <p>{{ errorMessage }}</p>
-      <button type="button" @click="loadDetails">Try again</button>
+      <button type="button" @click="loadDetails">{{ labels.tryAgain }}</button>
     </div>
 
     <template v-else-if="details">
       <header class="detail-header">
         <div>
-          <p class="eyebrow">Item #{{ formatResourceId(details.id) }}</p>
+          <p class="eyebrow">{{ labels.item }} #{{ formatResourceId(details.id) }}</p>
           <h2>{{ displayName }}</h2>
           <div class="badge-row">
             <span>{{ formatResourceName(details.category?.name) }}</span>
@@ -35,25 +35,25 @@
 
       <dl class="facts-grid">
         <div>
-          <dt>Store price</dt>
+          <dt>{{ labels.storePrice }}</dt>
           <dd>{{ formatCost(details.cost) }}</dd>
         </div>
         <div>
-          <dt>Fling power</dt>
+          <dt>{{ labels.flingPower }}</dt>
           <dd>{{ details.fling_power ?? '—' }}</dd>
         </div>
         <div>
-          <dt>Held by</dt>
+          <dt>{{ labels.heldBy }}</dt>
           <dd>{{ details.held_by_pokemon?.length ?? 0 }} Pokémon</dd>
         </div>
         <div>
-          <dt>Game appearances</dt>
+          <dt>{{ labels.gameAppearances }}</dt>
           <dd>{{ details.game_indices?.length ?? 0 }}</dd>
         </div>
       </dl>
 
       <section v-if="flavorText" class="secondary-section">
-        <h3>Game description</h3>
+        <h3>{{ labels.gameDescription }}</h3>
         <p>{{ flavorText }}</p>
       </section>
     </template>
@@ -62,6 +62,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
   formatResourceId,
@@ -77,33 +78,67 @@ const props = defineProps({
   },
 });
 
+const { language } = useI18n();
 const details = ref(null);
 const loading = ref(false);
 const errorMessage = ref('');
 let activeRequestId = 0;
 
+const labels = computed(() => language.value === 'de'
+  ? {
+      loading: 'Itemdetails werden geladen…',
+      tryAgain: 'Erneut versuchen',
+      item: 'Item',
+      storePrice: 'Ladenpreis',
+      flingPower: 'Schleuderstärke',
+      heldBy: 'Getragen von',
+      gameAppearances: 'Spielauftritte',
+      gameDescription: 'Spielbeschreibung',
+      notSold: 'Nicht verkäuflich',
+      loadError: 'Die Itemdetails konnten nicht geladen werden.',
+    }
+  : {
+      loading: 'Loading item details…',
+      tryAgain: 'Try again',
+      item: 'Item',
+      storePrice: 'Store price',
+      flingPower: 'Fling power',
+      heldBy: 'Held by',
+      gameAppearances: 'Game appearances',
+      gameDescription: 'Game description',
+      notSold: 'Not sold',
+      loadError: 'The item details could not be loaded.',
+    });
+
 const displayName = computed(() => {
-  return getLocalizedName(details.value?.names, details.value?.name, 'en');
+  return getLocalizedName(details.value?.names, details.value?.name, language.value);
 });
 const spriteUrl = computed(() => {
   return details.value?.sprites?.default
     || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${details.value?.name}.png`;
 });
 const effectDescription = computed(() => {
-  return getLocalizedEffect(details.value?.effect_entries);
+  return getLocalizedEffect(
+    details.value?.effect_entries,
+    null,
+    language.value,
+  );
 });
 const flavorText = computed(() => {
   const entries = details.value?.flavor_text_entries || [];
+  const localizedEntries = entries.filter((entry) => entry.language?.name === language.value);
   const englishEntries = entries.filter((entry) => entry.language?.name === 'en');
-  return englishEntries.at(-1)?.text?.replace(/[\n\f]+/g, ' ') || '';
+  const entry = localizedEntries.at(-1) || englishEntries.at(-1);
+  return entry?.text?.replace(/[\n\f]+/g, ' ') || '';
 });
 
 const formatCost = (cost) => {
   if (!cost) {
-    return 'Not sold';
+    return labels.value.notSold;
   }
 
-  return `${new Intl.NumberFormat('en').format(cost)} ₽`;
+  const locale = language.value === 'de' ? 'de-DE' : 'en-US';
+  return `${new Intl.NumberFormat(locale).format(cost)} ₽`;
 };
 
 const loadDetails = async () => {
@@ -121,7 +156,7 @@ const loadDetails = async () => {
   } catch (requestError) {
     if (requestId === activeRequestId) {
       console.error('Failed to load item details:', requestError);
-      errorMessage.value = 'The item details could not be loaded.';
+      errorMessage.value = labels.value.loadError;
     }
   } finally {
     if (requestId === activeRequestId) {
@@ -144,9 +179,7 @@ watch(
   padding: clamp(22px, 4vw, 34px);
   border: 1px solid #cfd8e8;
   border-radius: 22px;
-  background:
-    radial-gradient(circle at 92% 8%, rgba(37, 99, 235, 0.12), transparent 18rem),
-    #ffffff;
+  background: #ffffff;
   box-shadow: 0 16px 42px rgba(23, 32, 51, 0.08);
 }
 
@@ -222,7 +255,6 @@ watch(
   color: #2563eb;
   font-size: 2rem;
   background: linear-gradient(145deg, #ffffff, #edf4ff);
-  box-shadow: 0 16px 30px rgba(37, 99, 235, 0.12);
 }
 
 .sprite-frame img {
@@ -290,20 +322,51 @@ watch(
   line-height: 1.6;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 760px) {
+  .detail-card {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .detail-header {
+    gap: 12px;
+  }
+
+  .detail-header h2 {
+    font-size: clamp(1.65rem, 9vw, 2.5rem);
+  }
+
   .sprite-frame {
-    width: 82px;
-    height: 82px;
-    border-radius: 22px;
+    width: 76px;
+    height: 76px;
+    border-radius: 14px;
   }
 
   .sprite-frame img {
-    width: 66px;
-    height: 66px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .description {
+    margin-top: 16px;
+    padding: 12px;
+  }
+
+  .facts-grid {
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .facts-grid div {
+    padding: 10px;
+  }
+
+  .facts-grid dd {
+    font-size: 0.95rem;
   }
 }
 
-@media (max-width: 440px) {
+@media (max-width: 340px) {
   .facts-grid {
     grid-template-columns: 1fr;
   }

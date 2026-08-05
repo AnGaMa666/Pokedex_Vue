@@ -90,17 +90,11 @@ const navigationItems = computed(() => [
   border-radius: 14px;
   color: #344054;
   text-decoration: none;
-  transition:
-    border-color 160ms ease,
-    color 160ms ease,
-    background 160ms ease,
-    transform 160ms ease;
 }
 
 .navigation-link:hover {
   border-color: #d5d9e1;
   background: #ffffff;
-  transform: translateX(2px);
 }
 
 .navigation-link:focus-visible {
@@ -180,28 +174,50 @@ const navigationItems = computed(() => [
 @media (max-width: 900px) {
   .app-navigation {
     position: static;
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    padding: 8px;
-    scroll-snap-type: x proximity;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
   }
 
   .navigation-link {
-    flex: 0 0 auto;
-    grid-template-columns: 36px auto;
-    min-height: 52px;
-    padding: 7px 10px;
-    scroll-snap-align: start;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 3px;
+    justify-items: center;
+    min-width: 0;
+    min-height: 54px;
+    padding: 5px 2px;
+    text-align: center;
   }
 
   .navigation-icon {
-    width: 36px;
-    height: 36px;
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+  }
+
+  .navigation-copy {
+    width: 100%;
+  }
+
+  .navigation-copy strong {
+    overflow: hidden;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .navigation-copy small {
     display: none;
+  }
+}
+
+@media (max-width: 380px) {
+  .navigation-copy strong {
+    font-size: 0.62rem;
   }
 }
 </style>

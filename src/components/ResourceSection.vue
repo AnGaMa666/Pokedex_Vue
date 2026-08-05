@@ -1,5 +1,9 @@
 <template>
-  <section class="resource-section" :aria-labelledby="`${kind}-title`">
+  <section
+    class="resource-section"
+    :class="{ 'has-selection': selectedResource }"
+    :aria-labelledby="`${kind}-title`"
+  >
     <aside class="resource-directory">
       <div class="directory-heading">
         <div>
@@ -100,6 +104,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  requestedResource: {
+    type: String,
+    default: '',
+  },
 });
 
 const { t } = useI18n();
@@ -158,9 +166,7 @@ const filteredResources = computed(() => {
     return resource.name.includes(query) || String(resource.id).includes(query);
   });
 });
-const pageCount = computed(() => {
-  return Math.max(1, Math.ceil(filteredResources.value.length / PAGE_SIZE));
-});
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredResources.value.length / PAGE_SIZE)));
 const pagedResources = computed(() => {
   const startIndex = (page.value - 1) * PAGE_SIZE;
   return filteredResources.value.slice(startIndex, startIndex + PAGE_SIZE);
@@ -172,6 +178,46 @@ const isVisibleItem = (resource) => {
   }
 
   return !resource.name.endsWith('-berry') && !MACHINE_ITEM_PATTERN.test(resource.name);
+};
+
+const scrollToDetails = async () => {
+  await nextTick();
+
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    detailPanel.value?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+    detailPanel.value?.focus({ preventScroll: true });
+  }
+};
+
+const selectResource = async (resource, { scroll = true } = {}) => {
+  selectedResource.value = resource;
+
+  if (scroll) {
+    await scrollToDetails();
+  }
+};
+
+const openRequestedResource = async () => {
+  const requested = props.requestedResource.trim().toLowerCase();
+
+  if (!requested || !resources.value.length) {
+    return;
+  }
+
+  const resourceIndex = resources.value.findIndex((resource) => {
+    return resource.name === requested || String(resource.id) === requested;
+  });
+
+  if (resourceIndex < 0) {
+    return;
+  }
+
+  const resource = resources.value[resourceIndex];
+  page.value = Math.floor(resourceIndex / PAGE_SIZE) + 1;
+  await selectResource(resource);
 };
 
 const loadResources = async () => {
@@ -188,6 +234,8 @@ const loadResources = async () => {
       }))
       .filter((resource) => resource.id !== null && isVisibleItem(resource))
       .sort((firstResource, secondResource) => firstResource.id - secondResource.id);
+
+    await openRequestedResource();
   } catch (requestError) {
     console.error(`Failed to load ${props.kind}:`, requestError);
     hasError.value = true;
@@ -196,24 +244,16 @@ const loadResources = async () => {
   }
 };
 
-const selectResource = async (resource) => {
-  selectedResource.value = resource;
-  await nextTick();
-
-  if (window.matchMedia('(max-width: 760px)').matches) {
-    detailPanel.value?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
-    detailPanel.value?.focus({ preventScroll: true });
-  }
-};
-
 watch(
   () => props.searchQuery,
   () => {
     page.value = 1;
   },
+);
+
+watch(
+  () => props.requestedResource,
+  openRequestedResource,
 );
 
 watch(pageCount, (newPageCount) => {
@@ -324,10 +364,6 @@ onMounted(loadResources);
   text-align: left;
   cursor: pointer;
   background: transparent;
-  transition:
-    border-color 150ms ease,
-    color 150ms ease,
-    background 150ms ease;
 }
 
 .resource-button:hover {
@@ -397,7 +433,7 @@ onMounted(loadResources);
 
 .resource-detail {
   min-width: 0;
-  scroll-margin-top: 176px;
+  scroll-margin-top: 120px;
   outline: none;
 }
 
@@ -412,7 +448,6 @@ onMounted(loadResources);
   color: #596579;
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 14px 38px rgba(23, 32, 51, 0.06);
-  backdrop-filter: blur(10px);
 }
 
 .empty-symbol {
@@ -426,7 +461,6 @@ onMounted(loadResources);
   font-size: 2rem;
   font-weight: 900;
   background: lightyellow;
-  box-shadow: 0 16px 30px rgba(23, 32, 51, 0.14);
 }
 
 .empty-symbol[data-kind='items'] {
@@ -465,14 +499,48 @@ onMounted(loadResources);
 @media (max-width: 760px) {
   .resource-section {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .resource-directory {
     position: static;
   }
 
+  .directory-heading {
+    padding: 14px 14px 8px;
+  }
+
+  .directory-heading h1 {
+    font-size: 1.25rem;
+  }
+
+  .directory-description {
+    padding: 0 14px 10px;
+    font-size: 0.78rem;
+  }
+
   .resource-list {
-    max-height: 430px;
+    max-height: 300px;
+    padding: 5px;
+  }
+
+  .resource-button {
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    min-height: 42px;
+    padding: 5px 8px;
+  }
+
+  .pagination {
+    padding: 8px;
+  }
+
+  .resource-detail {
+    scroll-margin-top: 112px;
+  }
+
+  .empty-detail {
+    min-height: 0;
+    padding: 18px;
   }
 }
 
@@ -483,10 +551,10 @@ onMounted(loadResources);
   }
 
   .empty-symbol {
-    width: 62px;
-    height: 62px;
-    border-radius: 18px;
-    font-size: 1.45rem;
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    font-size: 1.35rem;
   }
 }
 </style>

@@ -17,20 +17,30 @@ export const getResourceId = (url = '') => {
 
 export const getLocalizedName = (names = [], fallback = '', language = 'en') => {
   const localizedName = names.find((entry) => entry.language?.name === language)?.name;
-  return localizedName || formatResourceName(fallback);
+  const englishName = names.find((entry) => entry.language?.name === 'en')?.name;
+  return localizedName || englishName || formatResourceName(fallback);
 };
 
-export const getLocalizedEffect = (entries = [], effectChance = null) => {
-  const effect = entries.find((entry) => entry.language?.name === 'en')?.short_effect || '';
+export const getLocalizedEffect = (
+  entries = [],
+  effectChance = null,
+  language = 'en',
+) => {
+  const localizedEntry = entries.find((entry) => entry.language?.name === language)
+    || entries.find((entry) => entry.language?.name === 'en');
+  const effect = localizedEntry?.short_effect || '';
 
   if (!effect) {
-    return 'No effect description is available.';
+    return language === 'de'
+      ? 'Keine Effektbeschreibung verfügbar.'
+      : 'No effect description is available.';
   }
 
   return effect.replaceAll('$effect_chance', effectChance ?? '—');
 };
 
 export const getLocalizedFlavorText = (entries = [], language = 'en') => {
-  const entry = entries.find((candidate) => candidate.language?.name === language);
+  const entry = entries.find((candidate) => candidate.language?.name === language)
+    || entries.find((candidate) => candidate.language?.name === 'en');
   return entry?.flavor_text?.replace(/[\n\f]+/g, ' ') || '';
 };
