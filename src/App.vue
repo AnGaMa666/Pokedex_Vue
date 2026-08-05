@@ -24,17 +24,22 @@
             :selected-pokemon-id="selectedPokemon?.id ?? null"
             @select="selectPokemon"
           />
-          <section class="details-container" aria-live="polite">
+
+          <section ref="detailsContainer" class="details-container" aria-live="polite">
             <PokemonDetails
               v-if="selectedPokemon"
               :pokemon="selectedPokemon"
               :is-shiny="isShiny"
               @details-loaded="updateSelectedPokemonDetails"
+              @open-resource="openResource"
             />
+
             <MoveList
               v-if="selectedPokemonDetails?.moves?.length"
               :pokemon-details="selectedPokemonDetails"
+              @open-resource="openResource"
             />
+
             <div v-else-if="!selectedPokemon" class="empty-state">
               <span class="empty-state-mark" aria-hidden="true"></span>
               <div>
@@ -51,6 +56,7 @@
           :key="activeSection"
           :kind="activeSection"
           :search-query="searchQuery"
+          :requested-resource="requestedResource"
         />
       </main>
     </div>
@@ -60,6 +66,7 @@
 <script setup>
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -104,12 +111,21 @@ const sectionConfigs = computed(() => ({
   },
 }));
 
-const getSectionFromHash = () => {
-  const requestedSection = window.location.hash.slice(1).split('?')[0].toLowerCase();
-  return Object.hasOwn(sectionConfigs.value, requestedSection) ? requestedSection : 'home';
+const parseHashRoute = () => {
+  const rawHash = window.location.hash.slice(1);
+  const [requestedSection = '', query = ''] = rawHash.split('?');
+  const section = requestedSection.toLowerCase();
+  const resolvedSection = Object.hasOwn(sectionConfigs.value, section) ? section : 'home';
+  const params = new URLSearchParams(query);
+
+  return {
+    section: resolvedSection,
+    resource: params.get('resource')?.trim().toLowerCase() || '',
+  };
 };
 
 const activeSection = ref('home');
+const requestedResource = ref('');
 const searchQueries = reactive({
   pokedex: '',
   moves: '',
@@ -118,23 +134,37 @@ const searchQueries = reactive({
 });
 const selectedPokemon = ref(null);
 const selectedPokemonDetails = ref(null);
+const detailsContainer = ref(null);
 const isShiny = ref(false);
 
 const activeConfig = computed(() => sectionConfigs.value[activeSection.value]);
 const searchQuery = computed(() => searchQueries[activeSection.value] || '');
 
 const syncSectionFromHash = () => {
-  const resolvedSection = getSectionFromHash();
-  activeSection.value = resolvedSection;
+  const route = parseHashRoute();
+  activeSection.value = route.section;
+  requestedResource.value = route.resource;
 
-  if (window.location.hash !== `#${resolvedSection}`) {
-    window.history.replaceState(null, '', `#${resolvedSection}`);
+  const expectedHash = route.resource
+    ? `#${route.section}?resource=${encodeURIComponent(route.resource)}`
+    : `#${route.section}`;
+
+  if (window.location.hash !== expectedHash) {
+    window.history.replaceState(null, '', expectedHash);
   }
 };
 
-const selectPokemon = (pokemon) => {
+const selectPokemon = async (pokemon) => {
   selectedPokemon.value = pokemon;
   selectedPokemonDetails.value = null;
+  await nextTick();
+
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    detailsContainer.value?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  }
 };
 
 const updateSelectedPokemonDetails = (pokemonDetails) => {
@@ -145,6 +175,21 @@ const updateSearchQuery = (query) => {
   if (activeSection.value !== 'home') {
     searchQueries[activeSection.value] = query;
   }
+};
+
+const openResource = ({ kind, name }) => {
+  if (!['moves', 'items', 'berries'].includes(kind) || !name) {
+    return;
+  }
+
+  const nextHash = `#${kind}?resource=${encodeURIComponent(name)}`;
+
+  if (window.location.hash === nextHash) {
+    syncSectionFromHash();
+    return;
+  }
+
+  window.location.hash = nextHash;
 };
 
 const toggleShiny = () => {
@@ -193,6 +238,7 @@ onBeforeUnmount(() => {
   gap: 24px;
   min-width: 0;
   align-items: start;
+  scroll-margin-top: 120px;
 }
 
 .empty-state {
@@ -271,24 +317,30 @@ onBeforeUnmount(() => {
 
 @media (max-width: 760px) {
   .workspace {
-    gap: 16px;
-    padding: 164px 16px 20px;
+    gap: 12px;
+    padding: 12px 10px 20px;
   }
 
-  .pokedex-layout {
+  .pokedex-layout,
+  .details-container {
     grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .details-container {
+    scroll-margin-top: 112px;
   }
 
   .empty-state {
     align-items: flex-start;
     min-height: 0;
-    padding: 24px;
+    padding: 18px;
   }
 
   .empty-state-mark {
-    width: 52px;
-    height: 52px;
-    border-width: 11px;
+    width: 48px;
+    height: 48px;
+    border-width: 10px;
   }
 }
 
