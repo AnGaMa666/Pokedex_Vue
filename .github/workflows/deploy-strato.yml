@@ -39,18 +39,51 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Install SFTP client
+      - name: Install SFTP clients
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends lftp
+          sudo apt-get install --yes --no-install-recommends lftp sshpass
+
+      - name: Normalize deployment settings
+        env:
+          RAW_STRATO_SFTP_HOST: ${{ secrets.STRATO_SFTP_HOST }}
+          RAW_STRATO_SFTP_PORT: ${{ secrets.STRATO_SFTP_PORT }}
+          RAW_STRATO_SFTP_USER: ${{ secrets.STRATO_SFTP_USER }}
+          RAW_STRATO_SFTP_REMOTE_PATH: ${{ secrets.STRATO_SFTP_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+
+          normalize_and_export() {
+            local variable_name="$1"
+            local raw_value="$2"
+            local normalized_value
+
+            normalized_value="$(
+              printf '%s' "$raw_value" \
+                | tr -d '\r\n' \
+                | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+            )"
+
+            if [ "$raw_value" != "$normalized_value" ]; then
+              echo "::warning::${variable_name} contained surrounding whitespace or line breaks and was normalized."
+            fi
+
+            if [ -z "$normalized_value" ]; then
+              echo "::error::${variable_name} is empty after normalization."
+              exit 1
+            fi
+
+            printf '%s=%s\n' "$variable_name" "$normalized_value" >> "$GITHUB_ENV"
+          }
+
+          normalize_and_export STRATO_SFTP_HOST "$RAW_STRATO_SFTP_HOST"
+          normalize_and_export STRATO_SFTP_PORT "$RAW_STRATO_SFTP_PORT"
+          normalize_and_export STRATO_SFTP_USER "$RAW_STRATO_SFTP_USER"
+          normalize_and_export STRATO_SFTP_REMOTE_PATH "$RAW_STRATO_SFTP_REMOTE_PATH"
 
       - name: Validate deployment configuration
         env:
-          STRATO_SFTP_HOST: ${{ secrets.STRATO_SFTP_HOST }}
-          STRATO_SFTP_PORT: ${{ secrets.STRATO_SFTP_PORT }}
-          STRATO_SFTP_USER: ${{ secrets.STRATO_SFTP_USER }}
           STRATO_SFTP_PASSWORD: ${{ secrets.STRATO_SFTP_PASSWORD }}
-          STRATO_SFTP_REMOTE_PATH: ${{ secrets.STRATO_SFTP_REMOTE_PATH }}
           STRATO_SFTP_KNOWN_HOSTS: ${{ secrets.STRATO_SFTP_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
@@ -78,9 +111,23 @@ jobs:
               ;;
           esac
 
+          case "$STRATO_SFTP_HOST" in
+            *[[:space:]]*|*'/'*)
+              echo "STRATO_SFTP_HOST must contain only the server hostname."
+              exit 1
+              ;;
+          esac
+
+          case "$STRATO_SFTP_USER" in
+            *[[:space:]]*|'')
+              echo "STRATO_SFTP_USER must not contain whitespace."
+              exit 1
+              ;;
+          esac
+
           case "$STRATO_SFTP_REMOTE_PATH" in
-            ''|'/'|'.'|'./'|'..'|'../'*|*/'../'*)
-              echo "STRATO_SFTP_REMOTE_PATH must point to a dedicated, non-root web directory without parent traversal."
+            ''|'/'|'.'|'./'|'..'|'../'*|*/'../'*|*[[:space:]]*)
+              echo "STRATO_SFTP_REMOTE_PATH must point to a dedicated, non-root web directory without parent traversal or whitespace."
               exit 1
               ;;
           esac
@@ -100,26 +147,61 @@ jobs:
       - name: Synchronize website through SFTP
         env:
           LFTP_PASSWORD: ${{ secrets.STRATO_SFTP_PASSWORD }}
-          STRATO_SFTP_HOST: ${{ secrets.STRATO_SFTP_HOST }}
-          STRATO_SFTP_PORT: ${{ secrets.STRATO_SFTP_PORT }}
-          STRATO_SFTP_USER: ${{ secrets.STRATO_SFTP_USER }}
-          STRATO_SFTP_REMOTE_PATH: ${{ secrets.STRATO_SFTP_REMOTE_PATH }}
+          SSHPASS: ${{ secrets.STRATO_SFTP_PASSWORD }}
         run: |
           set -euo pipefail
 
-          lftp <<LFTP_COMMANDS
+          if lftp <<LFTP_COMMANDS
           set cmd:fail-exit yes
-          set net:max-retries 8
+          set net:max-retries 4
           set net:timeout 30
           set net:reconnect-interval-base 5
-          set net:reconnect-interval-max 30
+          set net:reconnect-interval-max 20
           set net:connection-limit 1
           set mirror:set-permissions no
           set sftp:auto-confirm no
           set sftp:max-packets-in-flight 1
-          set sftp:size-write 16384
+          set sftp:size-write 8192
           set sftp:connect-program "ssh -4 -a -x -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p $STRATO_SFTP_PORT"
           open --env-password --user "$STRATO_SFTP_USER" "sftp://$STRATO_SFTP_HOST"
           mirror --reverse --delete --continue --verbose=2 dist/ "$STRATO_SFTP_REMOTE_PATH"
           bye
           LFTP_COMMANDS
+          then
+            echo "STRATO deployment completed with lftp."
+            exit 0
+          fi
+
+          echo "::warning::lftp was disconnected by STRATO. Falling back to a serial OpenSSH upload."
+
+          for attempt in 1 2 3 4 5; do
+            echo "OpenSSH upload attempt ${attempt} of 5."
+
+            if sshpass -e scp \
+              -4 \
+              -r \
+              -P "$STRATO_SFTP_PORT" \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o PreferredAuthentications=password \
+              -o PubkeyAuthentication=no \
+              -o NumberOfPasswordPrompts=1 \
+              -o ConnectTimeout=20 \
+              -o ServerAliveInterval=15 \
+              -o ServerAliveCountMax=4 \
+              dist/. \
+              "${STRATO_SFTP_USER}@${STRATO_SFTP_HOST}:${STRATO_SFTP_REMOTE_PATH%/}/"
+            then
+              echo "STRATO deployment completed with the OpenSSH fallback."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 5 ]; then
+              sleep_seconds=$((attempt * 10))
+              echo "Upload attempt failed. Retrying in ${sleep_seconds} seconds."
+              sleep "$sleep_seconds"
+            fi
+          done
+
+          echo "::error::Both STRATO upload methods failed."
+          exit 1
