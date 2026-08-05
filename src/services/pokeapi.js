@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const POKE_API_ORIGIN = 'https://pokeapi.co';
 const POKE_API_PATH_PREFIX = '/api/v2/';
-const CACHE_PREFIX = 'pokedex-vue:v3:';
+const CACHE_PREFIX = 'pokedex-vue:v4:';
 const LIST_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const DETAIL_CACHE_TTL = 24 * 60 * 60 * 1000;
 const MAX_RESOURCE_LIMIT = 100000;
@@ -12,7 +12,7 @@ const pendingRequests = new Map();
 
 const apiClient = axios.create({
   baseURL: `${POKE_API_ORIGIN}${POKE_API_PATH_PREFIX}`,
-  timeout: 15000,
+  timeout: 20000,
   headers: {
     Accept: 'application/json',
   },
@@ -137,9 +137,51 @@ const getNamedResource = (endpoint, nameOrId) => {
   return cachedGet(`${endpoint}/${encodeURIComponent(nameOrId)}`);
 };
 
+const deduplicateNamedResources = (resources = []) => {
+  const entriesByName = new Map();
+
+  for (const resource of resources) {
+    if (resource?.name && !entriesByName.has(resource.name)) {
+      entriesByName.set(resource.name, resource);
+    }
+  }
+
+  return [...entriesByName.values()];
+};
+
+const loadItemCategories = async (categoryMatcher) => {
+  const categoryListResponse = await getResourceList('item-category');
+  const matchingCategories = categoryListResponse.data.results.filter((category) => {
+    return categoryMatcher(category.name);
+  });
+  const categoryResponses = await Promise.all(
+    matchingCategories.map((category) => getNamedResource('item-category', category.name)),
+  );
+
+  return {
+    categories: categoryResponses.map((response) => response.data),
+    items: deduplicateNamedResources(
+      categoryResponses.flatMap((response) => response.data.items || []),
+    ),
+  };
+};
+
+const getBallCollection = () => {
+  return loadItemCategories((name) => /(?:^|-)balls$/.test(name));
+};
+
+const getSpecialItemCollection = () => {
+  const specialCategoryPattern = /(?:mega-stones|z-crystals|species-specific|plates|memories|drives|orbs|key-items|event-items|plot-advancement)/;
+  return loadItemCategories((name) => specialCategoryPattern.test(name));
+};
+
 export default {
   getPokemons() {
     return getResourceList('pokemon');
+  },
+
+  getPokemonSpeciesList() {
+    return getResourceList('pokemon-species');
   },
 
   getMoves() {
@@ -154,6 +196,53 @@ export default {
     return getResourceList('berry');
   },
 
+  async getBallItems() {
+    const collection = await getBallCollection();
+    return {
+      data: {
+        count: collection.items.length,
+        results: collection.items,
+        categories: collection.categories,
+      },
+    };
+  },
+
+  async getSpecialItems() {
+    const collection = await getSpecialItemCollection();
+    return {
+      data: {
+        count: collection.items.length,
+        results: collection.items,
+        categories: collection.categories,
+      },
+    };
+  },
+
+  async getStandardItems() {
+    const [itemsResponse, balls, specialItems] = await Promise.all([
+      getResourceList('item'),
+      getBallCollection(),
+      getSpecialItemCollection(),
+    ]);
+    const excludedNames = new Set([
+      ...balls.items.map((item) => item.name),
+      ...specialItems.items.map((item) => item.name),
+    ]);
+    const machinePattern = /^(?:tm|hm|tr)\d+$/;
+    const results = itemsResponse.data.results.filter((item) => {
+      return !excludedNames.has(item.name)
+        && !item.name.endsWith('-berry')
+        && !machinePattern.test(item.name);
+    });
+
+    return {
+      data: {
+        count: results.length,
+        results,
+      },
+    };
+  },
+
   getPokemonDetails(nameOrId) {
     return getNamedResource('pokemon', nameOrId);
   },
@@ -162,8 +251,20 @@ export default {
     return getNamedResource('pokemon-species', nameOrId);
   },
 
+  getPokemonEncounters(nameOrId) {
+    return cachedGet(`pokemon/${encodeURIComponent(nameOrId)}/encounters`);
+  },
+
   getMoveDetails(nameOrId) {
     return getNamedResource('move', nameOrId);
+  },
+
+  getMoveDamageClass(nameOrId) {
+    return getNamedResource('move-damage-class', nameOrId);
+  },
+
+  getMoveLearnMethod(nameOrId) {
+    return getNamedResource('move-learn-method', nameOrId);
   },
 
   getItemDetails(nameOrId) {
@@ -182,12 +283,68 @@ export default {
     return getNamedResource('berry', nameOrId);
   },
 
+  getTypeDetails(nameOrId) {
+    return getNamedResource('type', nameOrId);
+  },
+
+  getTypes() {
+    return getResourceList('type');
+  },
+
+  getRegions() {
+    return getResourceList('region');
+  },
+
+  getRegionDetails(nameOrId) {
+    return getNamedResource('region', nameOrId);
+  },
+
+  getPokedexDetails(nameOrId) {
+    return getNamedResource('pokedex', nameOrId);
+  },
+
+  getVersionDetails(nameOrId) {
+    return getNamedResource('version', nameOrId);
+  },
+
+  getVersionGroupDetails(nameOrId) {
+    return getNamedResource('version-group', nameOrId);
+  },
+
   getVersionGroup(nameOrId) {
     return getNamedResource('version-group', nameOrId);
   },
 
   getVersion(nameOrId) {
     return getNamedResource('version', nameOrId);
+  },
+
+  getVersions() {
+    return getResourceList('version');
+  },
+
+  getVersionGroups() {
+    return getResourceList('version-group');
+  },
+
+  getNatures() {
+    return getResourceList('nature');
+  },
+
+  getNatureDetails(nameOrId) {
+    return getNamedResource('nature', nameOrId);
+  },
+
+  getLocations() {
+    return getResourceList('location');
+  },
+
+  getLocationDetails(nameOrId) {
+    return getNamedResource('location', nameOrId);
+  },
+
+  getLocationAreaDetails(nameOrId) {
+    return getNamedResource('location-area', nameOrId);
   },
 
   getEvolutionChain(url) {

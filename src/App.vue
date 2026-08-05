@@ -3,13 +3,18 @@
     <Header
       :search-query="searchQuery"
       :is-shiny="isShiny"
-      :show-search="activeSection !== 'home'"
-      :show-shiny="activeSection === 'pokedex'"
+      :is-dark="isDark"
+      :sprite-mode="spriteMode"
+      :show-search="showGlobalSearch"
+      :show-shiny="activeSection === 'pokedex' || activeSection === 'team'"
+      :show-sprite-selector="activeSection === 'pokedex' || activeSection === 'team'"
       :section-label="activeConfig.label"
       :search-label="activeConfig.searchLabel"
       :search-placeholder="activeConfig.searchPlaceholder"
       @update-search-query="updateSearchQuery"
       @toggle-shiny="toggleShiny"
+      @toggle-dark="toggleDark"
+      @update-sprite-mode="setSpriteMode"
     />
 
     <div class="workspace">
@@ -22,14 +27,17 @@
           <PokemonList
             :search-query="searchQuery"
             :selected-pokemon-id="selectedPokemon?.id ?? null"
+            :is-shiny="isShiny"
+            :sprite-mode="spriteMode"
             @select="selectPokemon"
           />
 
           <section ref="detailsContainer" class="details-container" aria-live="polite">
-            <PokemonDetails
+            <PokemonProfile
               v-if="selectedPokemon"
               :pokemon="selectedPokemon"
               :is-shiny="isShiny"
+              :sprite-mode="spriteMode"
               @details-loaded="updateSelectedPokemonDetails"
               @open-resource="openResource"
             />
@@ -51,7 +59,18 @@
           </section>
         </section>
 
-        <ResourceSection
+        <RouteDirectory
+          v-else-if="activeSection === 'routes'"
+          :search-query="searchQuery"
+        />
+
+        <TeamBuilder
+          v-else-if="activeSection === 'team'"
+          :is-shiny="isShiny"
+          :sprite-mode="spriteMode"
+        />
+
+        <ExplorerDirectory
           v-else
           :key="activeSection"
           :kind="activeSection"
@@ -74,14 +93,19 @@ import {
 } from 'vue';
 import { useI18n } from '@/i18n';
 import AppNavigation from './components/AppNavigation.vue';
+import ExplorerDirectory from './components/ExplorerDirectory.vue';
 import Header from './components/Header.vue';
 import HomePage from './components/HomePage.vue';
 import MoveList from './components/MoveList.vue';
-import PokemonDetails from './components/PokemonDetails.vue';
 import PokemonList from './components/PokemonList.vue';
-import ResourceSection from './components/ResourceSection.vue';
+import PokemonProfile from './components/PokemonProfile.vue';
+import RouteDirectory from './components/RouteDirectory.vue';
+import TeamBuilder from './components/TeamBuilder.vue';
 
 const { t } = useI18n();
+const THEME_STORAGE_KEY = 'pokedex-vue:theme';
+const SPRITE_STORAGE_KEY = 'pokedex-vue:sprite-mode';
+const SHINY_STORAGE_KEY = 'pokedex-vue:shiny';
 
 const sectionConfigs = computed(() => ({
   home: {
@@ -109,6 +133,26 @@ const sectionConfigs = computed(() => ({
     searchLabel: t('section.berries.searchLabel'),
     searchPlaceholder: t('section.berries.searchPlaceholder'),
   },
+  balls: {
+    label: t('section.balls.label'),
+    searchLabel: t('section.balls.searchLabel'),
+    searchPlaceholder: t('section.balls.searchPlaceholder'),
+  },
+  'special-items': {
+    label: t('section.specialItems.label'),
+    searchLabel: t('section.specialItems.searchLabel'),
+    searchPlaceholder: t('section.specialItems.searchPlaceholder'),
+  },
+  routes: {
+    label: t('section.routes.label'),
+    searchLabel: t('section.routes.searchLabel'),
+    searchPlaceholder: t('section.routes.searchPlaceholder'),
+  },
+  team: {
+    label: t('section.team.label'),
+    searchLabel: '',
+    searchPlaceholder: '',
+  },
 }));
 
 const parseHashRoute = () => {
@@ -131,14 +175,20 @@ const searchQueries = reactive({
   moves: '',
   items: '',
   berries: '',
+  balls: '',
+  'special-items': '',
+  routes: '',
 });
 const selectedPokemon = ref(null);
 const selectedPokemonDetails = ref(null);
 const detailsContainer = ref(null);
 const isShiny = ref(false);
+const isDark = ref(false);
+const spriteMode = ref('pixel');
 
 const activeConfig = computed(() => sectionConfigs.value[activeSection.value]);
 const searchQuery = computed(() => searchQueries[activeSection.value] || '');
+const showGlobalSearch = computed(() => !['home', 'team'].includes(activeSection.value));
 
 const syncSectionFromHash = () => {
   const route = parseHashRoute();
@@ -159,7 +209,7 @@ const selectPokemon = async (pokemon) => {
   selectedPokemonDetails.value = null;
   await nextTick();
 
-  if (window.matchMedia('(max-width: 760px)').matches) {
+  if (window.matchMedia('(max-width: 900px)').matches) {
     detailsContainer.value?.scrollIntoView({
       behavior: 'smooth',
       block: 'start',
@@ -172,17 +222,27 @@ const updateSelectedPokemonDetails = (pokemonDetails) => {
 };
 
 const updateSearchQuery = (query) => {
-  if (activeSection.value !== 'home') {
+  if (Object.hasOwn(searchQueries, activeSection.value)) {
     searchQueries[activeSection.value] = query;
   }
 };
 
+const getResourceSection = (kind, name) => {
+  if (kind !== 'items') {
+    return kind;
+  }
+
+  const specialItemPattern = /(?:ite(?:-[xy])?|ium-z|memory|plate|drive|orb)$/;
+  return specialItemPattern.test(name) ? 'special-items' : 'items';
+};
+
 const openResource = ({ kind, name }) => {
-  if (!['moves', 'items', 'berries'].includes(kind) || !name) {
+  if (!['moves', 'items', 'berries', 'balls', 'special-items'].includes(kind) || !name) {
     return;
   }
 
-  const nextHash = `#${kind}?resource=${encodeURIComponent(name)}`;
+  const section = getResourceSection(kind, name);
+  const nextHash = `#${section}?resource=${encodeURIComponent(name)}`;
 
   if (window.location.hash === nextHash) {
     syncSectionFromHash();
@@ -192,11 +252,60 @@ const openResource = ({ kind, name }) => {
   window.location.hash = nextHash;
 };
 
+const persistPreference = (key, value) => {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Preferences remain active for the current page when storage is unavailable.
+  }
+};
+
+const applyTheme = () => {
+  document.documentElement.classList.toggle('dark', isDark.value);
+  document.documentElement.style.colorScheme = isDark.value ? 'dark' : 'light';
+};
+
 const toggleShiny = () => {
   isShiny.value = !isShiny.value;
+  persistPreference(SHINY_STORAGE_KEY, isShiny.value);
+};
+
+const toggleDark = () => {
+  isDark.value = !isDark.value;
+  applyTheme();
+  persistPreference(THEME_STORAGE_KEY, isDark.value ? 'dark' : 'light');
+};
+
+const setSpriteMode = (mode) => {
+  if (!['pixel', 'official', 'home', 'showdown'].includes(mode)) {
+    return;
+  }
+
+  spriteMode.value = mode;
+  persistPreference(SPRITE_STORAGE_KEY, mode);
+};
+
+const restorePreferences = () => {
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const storedSpriteMode = window.localStorage.getItem(SPRITE_STORAGE_KEY);
+    const storedShiny = window.localStorage.getItem(SHINY_STORAGE_KEY);
+    isDark.value = storedTheme
+      ? storedTheme === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    spriteMode.value = ['pixel', 'official', 'home', 'showdown'].includes(storedSpriteMode)
+      ? storedSpriteMode
+      : 'pixel';
+    isShiny.value = storedShiny === 'true';
+  } catch {
+    isDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  applyTheme();
 };
 
 onMounted(() => {
+  restorePreferences();
   syncSectionFromHash();
   window.addEventListener('hashchange', syncSectionFromHash);
 });
@@ -214,10 +323,10 @@ onBeforeUnmount(() => {
 .workspace {
   display: grid;
   grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
-  gap: 24px;
-  width: min(100%, 1680px);
+  gap: 18px;
+  width: min(100%, 2160px);
   min-height: 100vh;
-  padding: 96px 24px 32px;
+  padding: 86px 16px 28px;
   margin: 0 auto;
 }
 
@@ -227,38 +336,36 @@ onBeforeUnmount(() => {
 
 .pokedex-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 24px;
+  grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+  gap: 18px;
   align-items: start;
 }
 
 .details-container {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-  gap: 24px;
+  grid-template-columns: minmax(620px, 1fr) minmax(390px, 520px);
+  gap: 18px;
   min-width: 0;
   align-items: start;
-  scroll-margin-top: 120px;
+  scroll-margin-top: 100px;
 }
 
 .empty-state {
   grid-column: 1 / -1;
   display: flex;
-  gap: 20px;
+  gap: 18px;
   align-items: center;
-  min-height: 300px;
-  padding: 36px;
-  border: 1px dashed #aeb6c3;
-  border-radius: 22px;
-  color: #4b5563;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 14px 38px rgba(23, 32, 51, 0.06);
-  backdrop-filter: blur(10px);
+  min-height: 280px;
+  padding: 30px;
+  border: 1px dashed var(--legacy-border-strong);
+  color: var(--legacy-muted);
+  background: var(--legacy-surface);
+  box-shadow: 0 2px 5px var(--legacy-shadow);
 }
 
 .empty-state h1 {
   margin: 0 0 6px;
-  color: #172033;
+  color: var(--legacy-text);
   font-size: clamp(1.5rem, 3vw, 2.2rem);
 }
 
@@ -272,53 +379,57 @@ onBeforeUnmount(() => {
   display: block;
   max-width: 620px;
   margin-top: 12px;
-  color: #7a8494;
+  color: var(--legacy-muted);
   line-height: 1.5;
 }
 
 .empty-state-mark {
   position: relative;
   flex: 0 0 auto;
-  width: 72px;
-  height: 72px;
-  border: 16px solid #dc2626;
+  width: 66px;
+  height: 66px;
+  border: 14px solid #dc2626;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow:
-    inset 0 0 0 4px #172033,
-    0 12px 24px rgba(23, 32, 51, 0.12);
+  background: var(--legacy-page);
+  box-shadow: inset 0 0 0 4px var(--legacy-text);
 }
 
 .empty-state-mark::after {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 16px;
-  height: 16px;
-  border: 3px solid #172033;
+  width: 15px;
+  height: 15px;
+  border: 3px solid var(--legacy-text);
   border-radius: 50%;
   content: '';
-  background: #ffffff;
+  background: var(--legacy-page);
   transform: translate(-50%, -50%);
 }
 
-@media (max-width: 1220px) {
+@media (max-width: 1680px) {
+  .details-container {
+    grid-template-columns: minmax(560px, 1fr) minmax(360px, 440px);
+  }
+}
+
+@media (max-width: 1380px) {
   .details-container {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .workspace {
     grid-template-columns: 1fr;
-    padding-top: 92px;
+    padding-top: 14px;
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .workspace {
     gap: 12px;
-    padding: 12px 10px 20px;
+    padding: 12px 9px 20px;
   }
 
   .pokedex-layout,
@@ -328,19 +439,13 @@ onBeforeUnmount(() => {
   }
 
   .details-container {
-    scroll-margin-top: 112px;
+    scroll-margin-top: 108px;
   }
 
   .empty-state {
     align-items: flex-start;
     min-height: 0;
     padding: 18px;
-  }
-
-  .empty-state-mark {
-    width: 48px;
-    height: 48px;
-    border-width: 10px;
   }
 }
 

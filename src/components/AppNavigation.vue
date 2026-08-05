@@ -61,73 +61,99 @@ const navigationItems = computed(() => [
     description: t('navigation.berries.description'),
     icon: 'berries',
   },
+  {
+    id: 'balls',
+    label: t('navigation.balls.label'),
+    description: t('navigation.balls.description'),
+    icon: 'balls',
+  },
+  {
+    id: 'special-items',
+    label: t('navigation.specialItems.label'),
+    description: t('navigation.specialItems.description'),
+    icon: 'special-items',
+  },
+  {
+    id: 'routes',
+    label: t('navigation.routes.label'),
+    description: t('navigation.routes.description'),
+    icon: 'routes',
+  },
+  {
+    id: 'team',
+    label: t('navigation.team.label'),
+    description: t('navigation.team.description'),
+    icon: 'team',
+  },
 ]);
 </script>
 
 <style scoped>
 .app-navigation {
   position: sticky;
-  top: 96px;
+  top: 86px;
   display: grid;
-  gap: 8px;
+  gap: 5px;
   align-self: start;
-  padding: 10px;
-  border: 1px solid rgba(213, 217, 225, 0.9);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 12px 32px rgba(23, 32, 51, 0.07);
-  backdrop-filter: blur(14px);
+  max-height: calc(100vh - 104px);
+  padding: 7px;
+  overflow-y: auto;
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  background: var(--legacy-surface);
+  box-shadow: 0 2px 5px var(--legacy-shadow);
+  scrollbar-width: thin;
 }
 
 .navigation-link {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 9px;
   align-items: center;
-  min-height: 62px;
-  padding: 9px 12px;
+  min-height: 52px;
+  padding: 6px 8px;
   border: 1px solid transparent;
-  border-radius: 14px;
-  color: #344054;
+  border-radius: 4px;
+  color: var(--legacy-text);
   text-decoration: none;
 }
 
 .navigation-link:hover {
-  border-color: #d5d9e1;
-  background: #ffffff;
+  border-color: var(--legacy-border-strong);
+  background: var(--legacy-surface-hover);
 }
 
 .navigation-link:focus-visible {
-  outline: 3px solid rgba(220, 38, 38, 0.24);
+  outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
 
 .navigation-link.is-active {
-  border-color: rgba(220, 38, 38, 0.24);
-  color: #991b1b;
-  background: #fff4f4;
+  border-color: var(--legacy-border-strong);
+  background: var(--legacy-surface-active);
+  box-shadow: inset 4px 0 0 #888888;
 }
 
 .navigation-icon {
   position: relative;
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border: 1px solid #d5d9e1;
-  border-radius: 13px;
-  background: linear-gradient(145deg, #ffffff, #eef1f6);
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  background: var(--legacy-page);
 }
 
 .navigation-icon::before {
-  color: #4b5563;
+  color: var(--legacy-text);
   font-size: 1rem;
   font-weight: 900;
 }
 
 .navigation-icon[data-icon='home']::before {
   content: '⌂';
-  font-size: 1.35rem;
+  font-size: 1.25rem;
 }
 
 .navigation-icon[data-icon='pokedex']::before {
@@ -147,10 +173,24 @@ const navigationItems = computed(() => [
   color: mediumorchid;
 }
 
-.navigation-link.is-active .navigation-icon {
-  border-color: rgba(220, 38, 38, 0.32);
-  background: #ffffff;
-  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.12);
+.navigation-icon[data-icon='balls']::before {
+  content: '◉';
+  color: #dc2626;
+}
+
+.navigation-icon[data-icon='special-items']::before {
+  content: '✦';
+  color: #7c3aed;
+}
+
+.navigation-icon[data-icon='routes']::before {
+  content: '⌖';
+  color: #2563eb;
+}
+
+.navigation-icon[data-icon='team']::before {
+  content: 'Ⅵ';
+  color: #15803d;
 }
 
 .navigation-copy {
@@ -159,55 +199,41 @@ const navigationItems = computed(() => [
 }
 
 .navigation-copy strong {
-  font-size: 0.94rem;
+  font-size: 0.84rem;
 }
 
 .navigation-copy small {
-  margin-top: 3px;
+  margin-top: 2px;
   overflow: hidden;
-  color: #7a8494;
-  font-size: 0.75rem;
+  color: var(--legacy-muted);
+  font-size: 0.66rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1000px) {
   .app-navigation {
     position: static;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
-    padding: 6px;
-    overflow: visible;
+    grid-template-columns: repeat(5, minmax(110px, 1fr));
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .navigation-link {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 3px;
-    justify-items: center;
-    min-width: 0;
-    min-height: 54px;
-    padding: 5px 2px;
-    text-align: center;
+    grid-template-columns: 30px minmax(0, 1fr);
+    min-width: 110px;
+    min-height: 46px;
+    padding: 5px;
   }
 
   .navigation-icon {
     width: 30px;
     height: 30px;
-    border-radius: 4px;
-  }
-
-  .navigation-copy {
-    width: 100%;
   }
 
   .navigation-copy strong {
-    overflow: hidden;
-    font-size: 0.68rem;
-    line-height: 1.1;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 0.7rem;
   }
 
   .navigation-copy small {
@@ -215,9 +241,27 @@ const navigationItems = computed(() => [
   }
 }
 
-@media (max-width: 380px) {
+@media (max-width: 600px) {
+  .app-navigation {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .navigation-link {
+    grid-template-columns: 1fr;
+    gap: 2px;
+    justify-items: center;
+    min-width: 0;
+    min-height: 50px;
+    text-align: center;
+  }
+
   .navigation-copy strong {
-    font-size: 0.62rem;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 </style>

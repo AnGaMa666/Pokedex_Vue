@@ -1,16 +1,73 @@
 <template>
   <section
-    v-if="displayedMoves.length"
+    v-if="moveEntries.length"
     class="pokemon-moves"
-    :aria-busy="loadingTypes"
+    :aria-busy="loadingDetails"
     aria-labelledby="move-list-title"
   >
     <div class="move-heading">
-      <h2 id="move-list-title">{{ t('navigation.moves.label') }}</h2>
-      <span>{{ displayedMoves.length }}</span>
+      <div>
+        <h2 id="move-list-title">{{ labels.title }}</h2>
+        <small>{{ labels.subtitle }}</small>
+      </div>
+      <span>{{ displayedMoves.length }} / {{ moveEntries.length }}</span>
     </div>
 
-    <ul class="move-list">
+    <div class="move-controls" :aria-label="labels.filters">
+      <label class="version-control">
+        <span>{{ labels.gameGroup }}</span>
+        <select v-model="selectedVersionGroup">
+          <option v-for="group in versionGroupOptions" :key="group.name" :value="group.name">
+            {{ formatVersionGroup(group.name) }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        <span>{{ labels.damageClass }}</span>
+        <select v-model="selectedDamageClass">
+          <option value="">{{ labels.all }}</option>
+          <option value="physical">{{ labels.physical }}</option>
+          <option value="special">{{ labels.special }}</option>
+          <option value="status">{{ labels.status }}</option>
+        </select>
+      </label>
+
+      <label>
+        <span>{{ labels.learnMethod }}</span>
+        <select v-model="selectedLearnMethod">
+          <option value="">{{ labels.all }}</option>
+          <option v-for="method in availableLearnMethods" :key="method" :value="method">
+            {{ formatLearnMethod(method) }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        <span>{{ labels.type }}</span>
+        <select v-model="selectedType">
+          <option value="">{{ labels.all }}</option>
+          <option v-for="type in availableTypes" :key="type" :value="type">
+            {{ getLocalizedTypeName(type, language) }}
+          </option>
+        </select>
+      </label>
+
+      <label>
+        <span>{{ labels.sort }}</span>
+        <select v-model="sortMode">
+          <option value="name">{{ labels.sortName }}</option>
+          <option value="level">{{ labels.sortLevel }}</option>
+          <option value="damage-class">{{ labels.sortDamageClass }}</option>
+          <option value="type">{{ labels.sortType }}</option>
+        </select>
+      </label>
+    </div>
+
+    <p v-if="loadingDetails" class="move-status" role="status">{{ labels.loading }}</p>
+    <p v-else-if="displayedMoves.length === 0" class="move-status">{{ labels.noMatches }}</p>
+
+    <ul v-else class="move-list">
       <li v-for="move in displayedMoves" :key="move.name">
         <button
           type="button"
@@ -19,12 +76,26 @@
             backgroundColor: getMoveTypeColor(move.type),
             color: getTypeTextColor(move.type),
           }"
-          :aria-label="`${move.label} ${t('resource.moves.singular')} öffnen`"
+          :aria-label="`${move.label} ${labels.open}`"
           @click="openMove(move)"
         >
-          <strong>{{ move.label }}</strong>
-          <small v-if="move.type">{{ getLocalizedTypeName(move.type, language) }}</small>
-          <small v-else aria-hidden="true">…</small>
+          <span class="move-main-row">
+            <strong>{{ move.label }}</strong>
+            <span class="damage-class">{{ getDamageClassLabel(move.damageClass) }}</span>
+          </span>
+          <span class="move-type-row">
+            <small>{{ getLocalizedTypeName(move.type, language) }}</small>
+            <small v-if="move.power">{{ labels.power }} {{ move.power }}</small>
+          </span>
+          <span class="learn-methods">
+            <span
+              v-for="learning in move.learning"
+              :key="`${move.name}-${learning.method}-${learning.level}`"
+              class="learn-chip"
+            >
+              {{ formatLearning(learning) }}
+            </span>
+          </span>
         </button>
       </li>
     </ul>
@@ -35,8 +106,12 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
-import { getLocalizedTypeName, getTypeTextColor } from '@/utils/localization';
-import { getLocalizedName } from '@/utils/resource';
+import {
+  getLocalizedDamageClassName,
+  getLocalizedTypeName,
+  getTypeTextColor,
+} from '@/utils/localization';
+import { getLocalizedName, getResourceId } from '@/utils/resource';
 
 const props = defineProps({
   pokemonDetails: {
@@ -46,7 +121,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['openResource']);
-const { language, t } = useI18n();
+const { language } = useI18n();
 
 const TYPE_COLORS = {
   fire: '#df4747',
@@ -60,19 +135,86 @@ const TYPE_COLORS = {
   flying: '#32b3d1',
   psychic: '#ff80ff',
   bug: '#a8b820',
-  rock: '#5c4705',
+  rock: '#8b6d13',
   ghost: '#705898',
   dark: '#838383',
   dragon: '#7038f8',
-  steel: 'rgba(135, 131, 131, 0.52)',
+  steel: '#a8a8b8',
   fairy: '#f0b6bc',
   normal: '#b6afaf',
 };
 
 const MAX_PARALLEL_REQUESTS = 8;
-const movesWithType = ref([]);
-const loadingTypes = ref(false);
+const moveDetailsByName = ref({});
+const loadingDetails = ref(false);
+const selectedVersionGroup = ref('');
+const selectedDamageClass = ref('');
+const selectedLearnMethod = ref('');
+const selectedType = ref('');
+const sortMode = ref('name');
 let activeLoadId = 0;
+
+const labels = computed(() => language.value === 'de'
+  ? {
+      title: 'Attacken',
+      subtitle: 'Lernweg und Zeitpunkt nach Spielgruppe',
+      filters: 'Attacken filtern und sortieren',
+      gameGroup: 'Spiel / Versionsgruppe',
+      damageClass: 'Schadensart',
+      learnMethod: 'Lernmethode',
+      type: 'Typ',
+      sort: 'Sortierung',
+      all: 'Alle',
+      physical: 'Physisch',
+      special: 'Spezial',
+      status: 'Status',
+      sortName: 'Name A–Z',
+      sortLevel: 'Level aufsteigend',
+      sortDamageClass: 'Schadensart',
+      sortType: 'Typ',
+      loading: 'Attackendetails werden geladen…',
+      noMatches: 'Keine Attacke entspricht den gewählten Filtern.',
+      open: 'öffnen',
+      power: 'Stärke',
+      level: 'Level',
+      machine: 'TM / VM / TR',
+      tutor: 'Attacken-Lehrer',
+      egg: 'Zucht',
+      lightBallEgg: 'Zucht mit Kugelblitz',
+      formChange: 'Formwechsel',
+      levelUp: 'Levelaufstieg',
+      other: 'Andere Methode',
+    }
+  : {
+      title: 'Moves',
+      subtitle: 'Learning method and timing by game group',
+      filters: 'Filter and sort moves',
+      gameGroup: 'Game / version group',
+      damageClass: 'Damage class',
+      learnMethod: 'Learn method',
+      type: 'Type',
+      sort: 'Sort',
+      all: 'All',
+      physical: 'Physical',
+      special: 'Special',
+      status: 'Status',
+      sortName: 'Name A–Z',
+      sortLevel: 'Level ascending',
+      sortDamageClass: 'Damage class',
+      sortType: 'Type',
+      loading: 'Loading move details…',
+      noMatches: 'No move matches the selected filters.',
+      open: 'open',
+      power: 'Power',
+      level: 'Level',
+      machine: 'TM / HM / TR',
+      tutor: 'Move Tutor',
+      egg: 'Breeding',
+      lightBallEgg: 'Light Ball breeding',
+      formChange: 'Form change',
+      levelUp: 'Level up',
+      other: 'Other method',
+    });
 
 const moveEntries = computed(() => {
   const uniqueMoves = new Map();
@@ -80,31 +222,160 @@ const moveEntries = computed(() => {
   for (const moveEntry of props.pokemonDetails.moves || []) {
     const name = moveEntry.move?.name;
 
-    if (name && !uniqueMoves.has(name)) {
-      uniqueMoves.set(name, {
-        name,
-        type: null,
-        names: [],
-      });
+    if (!name) {
+      continue;
     }
+
+    uniqueMoves.set(name, {
+      name,
+      versionGroupDetails: moveEntry.version_group_details || [],
+    });
   }
 
   return [...uniqueMoves.values()];
 });
 
+const versionGroupOptions = computed(() => {
+  const groupsByName = new Map();
+
+  for (const move of moveEntries.value) {
+    for (const detail of move.versionGroupDetails) {
+      const group = detail.version_group;
+
+      if (group?.name && !groupsByName.has(group.name)) {
+        groupsByName.set(group.name, {
+          name: group.name,
+          id: getResourceId(group.url) ?? 0,
+        });
+      }
+    }
+  }
+
+  return [...groupsByName.values()].sort((firstGroup, secondGroup) => {
+    return secondGroup.id - firstGroup.id;
+  });
+});
+
+const getLearningForMove = (move) => {
+  const matchingEntries = move.versionGroupDetails.filter((detail) => {
+    return !selectedVersionGroup.value
+      || detail.version_group?.name === selectedVersionGroup.value;
+  });
+
+  return matchingEntries.map((detail) => ({
+    method: detail.move_learn_method?.name || 'other',
+    level: detail.level_learned_at ?? 0,
+  }));
+};
+
+const enrichedMoves = computed(() => {
+  return moveEntries.value
+    .map((move) => {
+      const details = moveDetailsByName.value[move.name];
+      const learning = getLearningForMove(move);
+
+      return {
+        ...move,
+        label: getLocalizedName(details?.names, move.name, language.value),
+        type: details?.type?.name || 'normal',
+        damageClass: details?.damage_class?.name || 'status',
+        power: details?.power ?? null,
+        learning,
+      };
+    })
+    .filter((move) => move.learning.length > 0);
+});
+
+const availableTypes = computed(() => [...new Set(
+  enrichedMoves.value.map((move) => move.type).filter(Boolean),
+)].sort((firstType, secondType) => {
+  return getLocalizedTypeName(firstType, language.value).localeCompare(
+    getLocalizedTypeName(secondType, language.value),
+    language.value,
+  );
+}));
+
+const availableLearnMethods = computed(() => [...new Set(
+  enrichedMoves.value.flatMap((move) => move.learning.map((entry) => entry.method)),
+)].sort((firstMethod, secondMethod) => {
+  return formatLearnMethod(firstMethod).localeCompare(
+    formatLearnMethod(secondMethod),
+    language.value,
+  );
+}));
+
+const getMinimumLearnLevel = (move) => {
+  const levels = move.learning
+    .filter((entry) => entry.method === 'level-up')
+    .map((entry) => entry.level);
+  return levels.length ? Math.min(...levels) : Number.MAX_SAFE_INTEGER;
+};
+
 const displayedMoves = computed(() => {
-  return movesWithType.value
-    .map((move) => ({
-      ...move,
-      label: getLocalizedName(move.names, move.name, language.value),
-    }))
-    .sort((firstMove, secondMove) => firstMove.label.localeCompare(
-      secondMove.label,
-      language.value,
-    ));
+  const filtered = enrichedMoves.value.filter((move) => {
+    const matchesDamageClass = !selectedDamageClass.value
+      || move.damageClass === selectedDamageClass.value;
+    const matchesType = !selectedType.value || move.type === selectedType.value;
+    const matchesMethod = !selectedLearnMethod.value
+      || move.learning.some((entry) => entry.method === selectedLearnMethod.value);
+    return matchesDamageClass && matchesType && matchesMethod;
+  });
+
+  return [...filtered].sort((firstMove, secondMove) => {
+    if (sortMode.value === 'level') {
+      const levelDifference = getMinimumLearnLevel(firstMove) - getMinimumLearnLevel(secondMove);
+      return levelDifference || firstMove.label.localeCompare(secondMove.label, language.value);
+    }
+
+    if (sortMode.value === 'damage-class') {
+      const classDifference = firstMove.damageClass.localeCompare(secondMove.damageClass);
+      return classDifference || firstMove.label.localeCompare(secondMove.label, language.value);
+    }
+
+    if (sortMode.value === 'type') {
+      const typeDifference = getLocalizedTypeName(firstMove.type, language.value).localeCompare(
+        getLocalizedTypeName(secondMove.type, language.value),
+        language.value,
+      );
+      return typeDifference || firstMove.label.localeCompare(secondMove.label, language.value);
+    }
+
+    return firstMove.label.localeCompare(secondMove.label, language.value);
+  });
 });
 
 const getMoveTypeColor = (type) => TYPE_COLORS[type] || '#f8f8f8';
+const getDamageClassLabel = (damageClass) => getLocalizedDamageClassName(
+  damageClass,
+  language.value,
+);
+
+const formatVersionGroup = (name) => {
+  return name
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' / ');
+};
+
+const formatLearnMethod = (method) => {
+  const mapping = {
+    'level-up': labels.value.levelUp,
+    machine: labels.value.machine,
+    tutor: labels.value.tutor,
+    egg: labels.value.egg,
+    'light-ball-egg': labels.value.lightBallEgg,
+    'form-change': labels.value.formChange,
+  };
+  return mapping[method] || labels.value.other;
+};
+
+const formatLearning = (learning) => {
+  if (learning.method === 'level-up') {
+    return `${labels.value.level} ${learning.level}`;
+  }
+
+  return formatLearnMethod(learning.method);
+};
 
 const openMove = (move) => {
   emit('openResource', {
@@ -113,94 +384,155 @@ const openMove = (move) => {
   });
 };
 
-const loadMoveTypes = async () => {
+const loadMoveDetails = async () => {
   const loadId = ++activeLoadId;
-  const entries = moveEntries.value.map((move) => ({ ...move }));
+  const missingMoves = moveEntries.value.filter((move) => {
+    return !moveDetailsByName.value[move.name];
+  });
 
-  movesWithType.value = entries;
-
-  if (!entries.length) {
-    loadingTypes.value = false;
+  if (!missingMoves.length) {
+    loadingDetails.value = false;
     return;
   }
 
-  loadingTypes.value = true;
+  loadingDetails.value = true;
   let nextIndex = 0;
 
   const worker = async () => {
-    while (nextIndex < entries.length) {
+    while (nextIndex < missingMoves.length) {
       const index = nextIndex;
       nextIndex += 1;
+      const move = missingMoves[index];
 
       try {
-        const response = await PokeAPI.getMoveDetails(entries[index].name);
+        const response = await PokeAPI.getMoveDetails(move.name);
 
         if (loadId !== activeLoadId) {
           return;
         }
 
-        movesWithType.value[index] = {
-          ...movesWithType.value[index],
-          type: response.data.type?.name || null,
-          names: response.data.names || [],
+        moveDetailsByName.value = {
+          ...moveDetailsByName.value,
+          [move.name]: response.data,
         };
       } catch (requestError) {
-        console.error(`Failed to load the type for ${entries[index].name}:`, requestError);
+        console.error(`Failed to load move ${move.name}:`, requestError);
       }
     }
   };
 
-  const workerCount = Math.min(MAX_PARALLEL_REQUESTS, entries.length);
+  const workerCount = Math.min(MAX_PARALLEL_REQUESTS, missingMoves.length);
   await Promise.all(Array.from({ length: workerCount }, worker));
 
   if (loadId === activeLoadId) {
-    loadingTypes.value = false;
+    loadingDetails.value = false;
   }
 };
 
 watch(
   () => props.pokemonDetails,
-  loadMoveTypes,
+  () => {
+    moveDetailsByName.value = {};
+    selectedDamageClass.value = '';
+    selectedLearnMethod.value = '';
+    selectedType.value = '';
+    sortMode.value = 'name';
+    selectedVersionGroup.value = versionGroupOptions.value[0]?.name || '';
+    void loadMoveDetails();
+  },
   { immediate: true },
 );
+
+watch(versionGroupOptions, (groups) => {
+  if (!groups.some((group) => group.name === selectedVersionGroup.value)) {
+    selectedVersionGroup.value = groups[0]?.name || '';
+  }
+}, { immediate: true });
 </script>
 
 <style scoped>
 .pokemon-moves {
-  max-height: calc(100vh - 112px);
+  position: sticky;
+  top: 86px;
+  max-height: calc(100vh - 104px);
   overflow: hidden;
-  border: 1px solid #cccccc;
+  border: 1px solid var(--legacy-border);
   border-radius: 4px;
-  background: #f8f8f8;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.22);
+  background: var(--legacy-surface);
+  box-shadow: 0 2px 5px var(--legacy-shadow);
 }
 
 .move-heading {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  padding: 16px;
-  border-bottom: 1px solid #cccccc;
-  background: #ffffff;
+  align-items: start;
+  padding: 14px;
+  border-bottom: 1px solid var(--legacy-border);
+  background: var(--legacy-page);
 }
 
 .move-heading h2 {
   margin: 0;
-  color: #333333;
-  font-size: 1.35rem;
+  color: var(--legacy-text);
+  font-size: 1.25rem;
 }
 
-.move-heading span {
-  color: #666666;
-  font-size: 0.875rem;
+.move-heading small,
+.move-heading > span {
+  color: var(--legacy-muted);
+  font-size: 0.7rem;
+}
+
+.move-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.move-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 9px;
+  border-bottom: 1px solid var(--legacy-border);
+}
+
+.move-controls label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--legacy-muted);
+  font-size: 0.62rem;
+  font-weight: 850;
+}
+
+.move-controls .version-control {
+  grid-column: 1 / -1;
+}
+
+.move-controls select {
+  min-width: 0;
+  width: 100%;
+  min-height: 33px;
+  padding: 5px 7px;
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  color: var(--legacy-text);
+  background: var(--legacy-page);
+  font-size: 0.72rem;
+}
+
+.move-status {
+  margin: 0;
+  padding: 18px;
+  color: var(--legacy-muted);
 }
 
 .move-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  max-height: calc(100vh - 182px);
-  padding: 12px;
+  gap: 7px;
+  max-height: calc(100vh - 355px);
+  padding: 9px;
   margin: 0;
   overflow-y: auto;
   list-style: none;
@@ -208,16 +540,16 @@ watch(
 
 .move-item {
   display: grid;
-  gap: 3px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
-  min-height: 54px;
-  align-content: center;
-  padding: 9px 10px;
-  border: 1px solid rgba(51, 51, 51, 0.2);
+  min-height: 92px;
+  align-content: start;
+  padding: 9px;
+  border: 1px solid rgba(51, 51, 51, 0.22);
   border-radius: 4px;
   overflow-wrap: anywhere;
-  text-align: center;
+  text-align: left;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
@@ -227,54 +559,96 @@ watch(
 }
 
 .move-item:focus-visible {
-  outline: 3px solid #333333;
+  outline: 2px solid currentColor;
   outline-offset: 2px;
 }
 
-.move-item strong {
-  font-size: 0.9rem;
+.move-main-row,
+.move-type-row {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+  align-items: start;
 }
 
-.move-item small {
-  font-size: 0.7rem;
-  font-weight: 700;
+.move-main-row strong {
+  min-width: 0;
+  font-size: 0.86rem;
+}
+
+.damage-class {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.54rem;
+  font-weight: 900;
+  opacity: 0.84;
+}
+
+.move-type-row small {
+  font-size: 0.64rem;
+  font-weight: 750;
   opacity: 0.82;
 }
 
-@media (max-width: 1100px) {
+.learn-methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.learn-chip {
+  padding: 3px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 0.56rem;
+  font-weight: 850;
+  background: rgba(255, 255, 255, 0.46);
+}
+
+@media (max-width: 1280px) {
   .pokemon-moves {
+    position: static;
     max-height: none;
   }
 
   .move-list {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    max-height: 420px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    max-height: 520px;
   }
 }
 
 @media (max-width: 760px) {
   .move-heading {
-    padding: 12px;
+    padding: 11px;
   }
 
-  .move-heading h2 {
-    font-size: 1.15rem;
+  .move-controls {
+    padding: 7px;
   }
 
   .move-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    max-height: min(52vh, 430px);
-    padding: 8px;
+    gap: 6px;
+    max-height: min(58vh, 520px);
+    padding: 7px;
   }
 
   .move-item {
-    min-height: 48px;
-    padding: 7px 8px;
+    min-height: 88px;
+    padding: 7px;
+  }
+}
+
+@media (max-width: 420px) {
+  .move-controls,
+  .move-list {
+    grid-template-columns: 1fr;
   }
 
-  .move-item strong {
-    font-size: 0.82rem;
+  .move-controls .version-control {
+    grid-column: auto;
   }
 }
 </style>
