@@ -6,8 +6,9 @@
         <h1 id="pokemon-list-title">{{ labels.title }}</h1>
       </div>
       <div v-if="!loading && !hasError" class="result-summary">
-        <strong>{{ filteredPokemons.length }} {{ labels.species }}</strong>
-        <small v-if="totalVariantCount > 0">
+        <strong>{{ totalPokemonEntries || pokemons.length }} {{ labels.entries }}</strong>
+        <small>
+          {{ filteredPokemons.length }} {{ labels.species }} ·
           {{ totalVariantCount }} {{ labels.formsAndVariants }}
         </small>
       </div>
@@ -64,14 +65,12 @@
           </option>
         </select>
       </label>
-    </div>
 
-    <p
-      v-if="!loading && !hasError && totalVariantCount > 0"
-      class="index-note"
-    >
-      {{ formatIndexNote() }}
-    </p>
+      <label class="variant-toggle">
+        <input v-model="showVariants" type="checkbox">
+        <span>{{ labels.showVariants }}</span>
+      </label>
+    </div>
 
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
 
@@ -88,7 +87,7 @@
 
     <template v-else>
       <ul class="pokemon-list" :aria-busy="enrichingPage">
-        <li v-for="pokemon in pagedPokemons" :key="pokemon.id">
+        <li v-for="pokemon in pagedPokemons" :key="pokemon.id" class="species-entry">
           <button
             type="button"
             class="pokemon-button"
@@ -120,8 +119,8 @@
               <span class="pokemon-name">{{ getPokemonLabel(pokemon) }}</span>
               <span v-if="getSpeciesDetails(pokemon)" class="pokemon-meta">
                 <span>{{ labels.captureRate }} {{ getSpeciesDetails(pokemon).capture_rate }}</span>
-                <span v-if="getSpeciesDetails(pokemon).varieties?.length > 1">
-                  {{ getSpeciesDetails(pokemon).varieties.length - 1 }} {{ labels.variants }}
+                <span v-if="getVariants(pokemon).length">
+                  {{ getVariants(pokemon).length }} {{ labels.formsAndVariants }}
                 </span>
               </span>
               <span class="status-row">
@@ -137,6 +136,43 @@
 
             <span class="selection-arrow" aria-hidden="true">›</span>
           </button>
+
+          <ul
+            v-if="showVariants && getVariants(pokemon).length"
+            class="variant-list"
+            :aria-label="labels.variantsFor.replace('{name}', getPokemonLabel(pokemon))"
+          >
+            <li v-for="variant in getVariants(pokemon)" :key="variant.pokemon.name">
+              <button
+                type="button"
+                class="variant-button"
+                :aria-label="labels.openVariant
+                  .replace('{variant}', getVariantLabel(pokemon, variant))
+                  .replace('{name}', getPokemonLabel(pokemon))"
+                @click="selectPokemon(pokemon)"
+              >
+                <span class="variant-connector" aria-hidden="true"></span>
+                <span class="variant-sprite" aria-hidden="true">
+                  <img
+                    :src="getVariantSprite(variant)"
+                    alt=""
+                    width="52"
+                    height="52"
+                    loading="lazy"
+                    @error="useFallbackSprite($event, pokemon.id)"
+                  >
+                </span>
+                <span class="variant-copy">
+                  <span class="variant-number">
+                    #{{ formatPokemonId(pokemon.id) }} · {{ labels.variant }}
+                  </span>
+                  <strong>{{ getVariantLabel(pokemon, variant) }}</strong>
+                  <small>{{ getVariantKind(variant) }}</small>
+                </span>
+                <span class="selection-arrow" aria-hidden="true">›</span>
+              </button>
+            </li>
+          </ul>
         </li>
       </ul>
 
@@ -167,9 +203,14 @@ import {
   getPokemonClassifications,
   matchesPokemonStatus,
 } from '@/utils/pokemonClassification';
-import { getLocalizedName, getResourceId } from '@/utils/resource';
+import {
+  formatResourceName,
+  getLocalizedName,
+  getResourceId,
+} from '@/utils/resource';
 import { getPokemonListSprite } from '@/utils/sprites';
 import { getLocalizedTypeName } from '@/utils/localization';
+import { getSpecialFormKind } from '@/utils/pokemonForms';
 
 const props = defineProps({
   searchQuery: {
@@ -219,6 +260,7 @@ const selectedPokedex = ref('');
 const selectedType = ref('');
 const selectedStatus = ref('all');
 const sortMode = ref('national-asc');
+const showVariants = ref(true);
 const page = ref(1);
 let activeEnrichmentId = 0;
 let activeRegionRequestId = 0;
@@ -228,10 +270,10 @@ let activeTypeRequestId = 0;
 const labels = computed(() => language.value === 'de'
   ? {
       kicker: 'Nationaler Index',
-      title: 'Pokémon-Arten',
-      species: 'Arten',
-      formsAndVariants: 'Formen/Varianten in den Profilen',
-      indexNote: '{species} Einträge sind nummerierte Pokémon-Arten. Die zusätzlichen {variants} Formen und Varianten werden beim jeweiligen Pokémon-Profil angezeigt und erhalten keine eigene Nationalnummer. Insgesamt sind {total} Pokémon-Einträge verfügbar.',
+      title: 'Pokémon',
+      entries: 'Pokémon-Einträge',
+      species: 'Arten in der Auswahl',
+      formsAndVariants: 'Formen/Varianten',
       filters: 'Pokémon filtern und sortieren',
       region: 'Region',
       allRegions: 'Alle Regionen',
@@ -241,18 +283,25 @@ const labels = computed(() => language.value === 'de'
       allTypes: 'Alle Typen',
       status: 'Status',
       sort: 'Sortierung',
+      showVariants: 'Formen und Varianten direkt unter der Art anzeigen',
       nationalAscending: 'Nationalnummer aufsteigend',
       nationalDescending: 'Nationalnummer absteigend',
       nameAscending: 'Name A–Z',
       regionalAscending: 'Regionalnummer aufsteigend',
-      loading: 'Pokémon-Arten werden geladen…',
-      loadError: 'Die Artenliste konnte nicht geladen werden.',
+      loading: 'Pokémon werden geladen…',
+      loadError: 'Die Pokémon-Liste konnte nicht geladen werden.',
       tryAgain: 'Erneut versuchen',
       noMatches: 'Keine Pokémon-Art entspricht den gewählten Filtern.',
       openLabel: '{name} mit nationaler Pokédex-Nummer {id} öffnen',
+      openVariant: '{variant} beim Profil von {name} öffnen',
+      variantsFor: 'Formen und Varianten von {name}',
       regionalShort: 'Regional',
       captureRate: 'Fangrate',
-      variants: 'Varianten',
+      variant: 'Variante',
+      regionalForm: 'Regionalform',
+      megaForm: 'Mega-Entwicklung',
+      gmaxForm: 'Gigadynamax-Form',
+      alternateForm: 'Alternative Form',
       pages: 'Pokémon-Seiten',
       previous: 'Zurück',
       next: 'Weiter',
@@ -260,10 +309,10 @@ const labels = computed(() => language.value === 'de'
     }
   : {
       kicker: 'National index',
-      title: 'Pokémon species',
-      species: 'species',
-      formsAndVariants: 'forms/varieties in the profiles',
-      indexNote: '{species} entries are numbered Pokémon species. The additional {variants} forms and varieties are displayed in the corresponding Pokémon profile and do not receive a separate National Pokédex number. {total} Pokémon entries are available in total.',
+      title: 'Pokémon',
+      entries: 'Pokémon entries',
+      species: 'species in selection',
+      formsAndVariants: 'forms/variants',
       filters: 'Filter and sort Pokémon',
       region: 'Region',
       allRegions: 'All regions',
@@ -273,18 +322,25 @@ const labels = computed(() => language.value === 'de'
       allTypes: 'All types',
       status: 'Status',
       sort: 'Sort',
+      showVariants: 'Show forms and variants directly below their species',
       nationalAscending: 'National number ascending',
       nationalDescending: 'National number descending',
       nameAscending: 'Name A–Z',
       regionalAscending: 'Regional number ascending',
-      loading: 'Loading Pokémon species…',
-      loadError: 'The species list could not be loaded.',
+      loading: 'Loading Pokémon…',
+      loadError: 'The Pokémon list could not be loaded.',
       tryAgain: 'Try again',
       noMatches: 'No Pokémon species match the selected filters.',
       openLabel: 'Open {name}, National Pokédex number {id}',
+      openVariant: 'Open {variant} in the profile of {name}',
+      variantsFor: 'Forms and variants of {name}',
       regionalShort: 'Regional',
       captureRate: 'Catch rate',
-      variants: 'variants',
+      variant: 'Variant',
+      regionalForm: 'Regional form',
+      megaForm: 'Mega Evolution',
+      gmaxForm: 'Gigantamax form',
+      alternateForm: 'Alternate form',
       pages: 'Pokémon pages',
       previous: 'Previous',
       next: 'Next',
@@ -320,7 +376,7 @@ const typeOptions = MAIN_TYPES;
 const maximumSpeciesId = computed(() => pokemons.value.at(-1)?.id ?? 0);
 const totalVariantCount = computed(() => Math.max(
   0,
-  totalPokemonEntries.value - pokemons.value.length,
+  Number(totalPokemonEntries.value || 0) - pokemons.value.length,
 ));
 const getSpeciesDetails = (pokemon) => speciesDetailsByName.value[pokemon.name] || null;
 const getPokemonLabel = (pokemon) => getLocalizedName(
@@ -328,6 +384,10 @@ const getPokemonLabel = (pokemon) => getLocalizedName(
   pokemon.name,
   language.value,
 );
+const getVariants = (pokemon) => {
+  return (getSpeciesDetails(pokemon)?.varieties || [])
+    .filter((variety) => !variety.is_default && variety.pokemon?.name);
+};
 const getVisibleClassifications = (pokemon) => getPokemonClassifications(
   pokemon.id,
   getSpeciesDetails(pokemon),
@@ -342,19 +402,79 @@ const getPokedexLabel = (pokedex) => getLocalizedName(
   pokedex.name,
   language.value,
 );
-const formatIndexNote = () => labels.value.indexNote
-  .replace('{species}', String(pokemons.value.length))
-  .replace('{variants}', String(totalVariantCount.value))
-  .replace('{total}', String(totalPokemonEntries.value));
+
+const getVariantId = (variant) => getResourceId(variant.pokemon?.url);
+const getVariantSprite = (variant) => {
+  const id = getVariantId(variant);
+  return id
+    ? getPokemonListSprite(id, props.spriteMode, props.isShiny)
+    : getPokemonListSprite(0, 'pixel', false);
+};
+const getVariantLabel = (pokemon, variant) => {
+  const baseLabel = getPokemonLabel(pokemon);
+  const variantName = variant.pokemon?.name || '';
+  const suffix = variantName.startsWith(`${pokemon.name}-`)
+    ? variantName.slice(pokemon.name.length + 1)
+    : variantName;
+  const localizedSuffixes = language.value === 'de'
+    ? {
+        alola: 'Alola-Form',
+        galar: 'Galar-Form',
+        hisui: 'Hisui-Form',
+        paldea: 'Paldea-Form',
+        mega: 'Mega',
+        'mega-x': 'Mega X',
+        'mega-y': 'Mega Y',
+        gmax: 'Gigadynamax',
+        female: 'weiblich',
+        male: 'männlich',
+      }
+    : {
+        alola: 'Alolan Form',
+        galar: 'Galarian Form',
+        hisui: 'Hisuian Form',
+        paldea: 'Paldean Form',
+        mega: 'Mega',
+        'mega-x': 'Mega X',
+        'mega-y': 'Mega Y',
+        gmax: 'Gigantamax',
+        female: 'female',
+        male: 'male',
+      };
+  const suffixLabel = localizedSuffixes[suffix] || formatResourceName(suffix);
+  return suffixLabel ? `${baseLabel} – ${suffixLabel}` : baseLabel;
+};
+const getVariantKind = (variant) => {
+  const name = variant.pokemon?.name || '';
+  const specialKind = getSpecialFormKind(name);
+
+  if (specialKind === 'mega') {
+    return labels.value.megaForm;
+  }
+
+  if (specialKind === 'gmax') {
+    return labels.value.gmaxForm;
+  }
+
+  if (/-(?:alola|galar|hisui|paldea)(?:-|$)/.test(name)) {
+    return labels.value.regionalForm;
+  }
+
+  return labels.value.alternateForm;
+};
 
 const filteredPokemons = computed(() => {
   const query = props.searchQuery.trim().toLocaleLowerCase(language.value);
   const regionalMap = regionalNumbers.value;
   const entries = pokemons.value.filter((pokemon) => {
     const label = getPokemonLabel(pokemon).toLocaleLowerCase(language.value);
+    const variantLabels = getVariants(pokemon).map((variant) => {
+      return getVariantLabel(pokemon, variant).toLocaleLowerCase(language.value);
+    });
     const matchesQuery = !query
       || pokemon.name.includes(query)
       || label.includes(query)
+      || variantLabels.some((variantLabel) => variantLabel.includes(query))
       || String(pokemon.id).includes(query)
       || (regionalMap.has(pokemon.name) && String(regionalMap.get(pokemon.name)).includes(query));
     const matchesRegion = !selectedPokedex.value || regionalMap.has(pokemon.name);
@@ -417,26 +537,17 @@ const selectPokemon = (pokemon) => emit('select', {
 const fetchPokemons = async () => {
   loading.value = true;
   hasError.value = false;
-  totalPokemonEntries.value = 0;
 
   try {
-    const [speciesResult, pokemonCountResult] = await Promise.allSettled([
+    const [speciesResponse, countResponse] = await Promise.all([
       PokeAPI.getPokemonSpeciesList(),
       PokeAPI.getPokemonEntryCount(),
     ]);
-
-    if (speciesResult.status !== 'fulfilled') {
-      throw speciesResult.reason;
-    }
-
-    pokemons.value = speciesResult.value.data.results
+    pokemons.value = speciesResponse.data.results
       .map((pokemon) => ({ ...pokemon, id: getResourceId(pokemon.url) }))
       .filter((pokemon) => pokemon.id !== null)
       .sort((firstPokemon, secondPokemon) => firstPokemon.id - secondPokemon.id);
-
-    totalPokemonEntries.value = pokemonCountResult.status === 'fulfilled'
-      ? Number(pokemonCountResult.value.data.count) || pokemons.value.length
-      : pokemons.value.length;
+    totalPokemonEntries.value = Number(countResponse.data.count) || pokemons.value.length;
   } catch (requestError) {
     console.error('Failed to load Pokémon species:', requestError);
     hasError.value = true;
@@ -635,7 +746,7 @@ watch(selectedType, () => {
   page.value = 1;
   void loadTypeFilter();
 });
-watch([selectedStatus, sortMode, () => props.searchQuery], () => {
+watch([selectedStatus, sortMode, showVariants, () => props.searchQuery], () => {
   page.value = 1;
 });
 watch(
@@ -668,7 +779,7 @@ onMounted(async () => {
 
 .list-heading {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   justify-content: space-between;
   align-items: flex-end;
   padding: 16px 14px 12px;
@@ -692,9 +803,7 @@ onMounted(async () => {
 
 .result-summary {
   display: grid;
-  flex: 0 0 auto;
-  gap: 2px;
-  max-width: 190px;
+  justify-items: end;
   color: var(--legacy-muted);
   text-align: right;
 }
@@ -702,13 +811,11 @@ onMounted(async () => {
 .result-summary strong {
   color: var(--legacy-text);
   font-size: 0.76rem;
-  font-weight: 900;
 }
 
 .result-summary small {
-  font-size: 0.61rem;
-  font-weight: 750;
-  line-height: 1.25;
+  margin-top: 3px;
+  font-size: 0.63rem;
 }
 
 .filter-panel {
@@ -728,7 +835,7 @@ onMounted(async () => {
   font-weight: 850;
 }
 
-.filter-panel label:last-child {
+.filter-panel label:nth-child(5) {
   grid-column: 1 / -1;
 }
 
@@ -743,14 +850,17 @@ onMounted(async () => {
   font-size: 0.76rem;
 }
 
-.index-note {
-  margin: 0;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--legacy-border);
-  color: var(--legacy-muted);
-  background: color-mix(in srgb, var(--legacy-page) 82%, var(--focus-color) 18%);
-  font-size: 0.65rem;
-  line-height: 1.45;
+.filter-panel .variant-toggle {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--legacy-border);
+  color: var(--legacy-text);
+  background: var(--legacy-page);
+  font-size: 0.72rem;
 }
 
 .status-message,
@@ -773,28 +883,38 @@ onMounted(async () => {
 }
 
 .pokemon-list {
-  max-height: calc(100vh - 438px);
+  max-height: calc(100vh - 420px);
   padding: 6px;
   margin: 0;
   overflow-y: auto;
   list-style: none;
 }
 
-.pokemon-button {
+.species-entry {
+  margin: 0;
+}
+
+.pokemon-button,
+.variant-button {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  gap: 10px;
   align-items: center;
   width: 100%;
-  min-height: 88px;
-  padding: 6px 9px 6px 6px;
   border: 1px solid transparent;
   color: var(--legacy-text);
   text-align: left;
+  cursor: pointer;
   background: transparent;
 }
 
-.pokemon-button:hover {
+.pokemon-button {
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 88px;
+  padding: 6px 9px 6px 6px;
+}
+
+.pokemon-button:hover,
+.variant-button:hover {
   border-color: var(--legacy-border-strong);
   background: var(--legacy-surface-hover);
 }
@@ -837,7 +957,8 @@ onMounted(async () => {
 }
 
 .pokemon-number,
-.regional-number {
+.regional-number,
+.variant-number {
   color: var(--legacy-muted);
   font-size: 0.69rem;
   font-weight: 850;
@@ -882,6 +1003,64 @@ onMounted(async () => {
   font-size: 1.5rem;
 }
 
+.variant-list {
+  padding: 0 0 5px 28px;
+  margin: 0;
+  list-style: none;
+}
+
+.variant-button {
+  position: relative;
+  grid-template-columns: 18px 52px minmax(0, 1fr) auto;
+  gap: 8px;
+  min-height: 66px;
+  padding: 5px 8px 5px 0;
+  border-left-color: var(--legacy-border);
+  background: color-mix(in srgb, var(--legacy-page) 72%, transparent);
+}
+
+.variant-connector {
+  align-self: stretch;
+  border-left: 1px solid var(--legacy-border-strong);
+  border-bottom: 1px solid var(--legacy-border-strong);
+  transform: translateY(-50%);
+}
+
+.variant-sprite {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid var(--legacy-border);
+  background: var(--legacy-page);
+}
+
+.variant-sprite img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.variant-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.variant-copy strong {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.variant-copy small {
+  margin-top: 2px;
+  color: var(--legacy-muted);
+  font-size: 0.62rem;
+}
+
 .pagination {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -917,24 +1096,21 @@ onMounted(async () => {
   }
 
   .pokemon-list {
-    max-height: 520px;
+    max-height: 620px;
   }
 }
 
 @media (max-width: 460px) {
   .list-heading {
-    align-items: start;
-  }
-
-  .result-summary {
-    max-width: 132px;
+    align-items: flex-start;
   }
 
   .filter-panel {
     grid-template-columns: 1fr;
   }
 
-  .filter-panel label:last-child {
+  .filter-panel label:nth-child(5),
+  .filter-panel .variant-toggle {
     grid-column: auto;
   }
 
@@ -950,6 +1126,24 @@ onMounted(async () => {
   .sprite-frame img {
     width: 58px;
     height: 58px;
+  }
+
+  .variant-list {
+    padding-left: 16px;
+  }
+
+  .variant-button {
+    grid-template-columns: 12px 46px minmax(0, 1fr) auto;
+  }
+
+  .variant-sprite {
+    width: 46px;
+    height: 46px;
+  }
+
+  .variant-sprite img {
+    width: 42px;
+    height: 42px;
   }
 }
 </style>
