@@ -1,3 +1,5 @@
+import { getMegaStone } from './megaStones.js';
+
 const MEGA_FORM_PATTERN = /-mega(?:-[a-z0-9]+)*$/;
 const GIGANTAMAX_FORM_PATTERN = /-gmax$/;
 
@@ -29,15 +31,18 @@ export const getSpecialBattleForms = (varieties = []) => {
     .filter((variety) => !variety.is_default && isSpecialBattleForm(variety.pokemon?.name))
     .map((variety) => {
       const id = getPokemonIdFromUrl(variety.pokemon?.url);
+      const name = variety.pokemon?.name || '';
+      const kind = getSpecialFormKind(name);
 
-      if (!id) {
+      if (!id || !kind) {
         return null;
       }
 
       return {
         id,
-        name: variety.pokemon.name,
-        kind: getSpecialFormKind(variety.pokemon.name),
+        name,
+        kind,
+        megaStone: kind === 'mega' ? getMegaStone(name) : null,
         sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`,
         shinySprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${id}.png`,
       };
