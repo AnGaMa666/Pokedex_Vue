@@ -11,16 +11,16 @@
       <header class="detail-header">
         <div>
           <p class="eyebrow">{{ labels.berry }} #{{ formatResourceId(details.id, 3) }}</p>
-          <h2>{{ formatResourceName(details.name) }} {{ labels.berry }}</h2>
+          <h2>{{ displayName }}</h2>
           <div class="badge-row">
-            <span>{{ formatResourceName(details.firmness?.name) }}</span>
-            <span>{{ formatResourceName(details.natural_gift_type?.name) }} {{ labels.gift }}</span>
+            <span>{{ labels.firmness }}: {{ firmnessLabel }}</span>
+            <span>{{ labels.naturalGift }}: {{ naturalGiftTypeLabel }}</span>
           </div>
         </div>
         <div class="sprite-frame">
           <img
             :src="spriteUrl"
-            :alt="`${formatResourceName(details.name)} ${labels.berry} sprite`"
+            :alt="`${displayName} ${labels.sprite}`"
             width="96"
             height="96"
           >
@@ -58,7 +58,7 @@
         </div>
         <div>
           <dt>{{ labels.giftType }}</dt>
-          <dd>{{ formatResourceName(details.natural_gift_type?.name) }}</dd>
+          <dd>{{ naturalGiftTypeLabel }}</dd>
         </div>
       </dl>
 
@@ -69,7 +69,7 @@
         </div>
         <div class="flavor-grid">
           <div v-for="flavor in activeFlavors" :key="flavor.flavor.name">
-            <span>{{ formatResourceName(flavor.flavor.name) }}</span>
+            <span>{{ getFlavorLabel(flavor.flavor.name) }}</span>
             <strong>{{ flavor.potency }}</strong>
             <div class="flavor-meter" aria-hidden="true">
               <span :style="{ width: `${getFlavorWidth(flavor.potency)}%` }"></span>
@@ -86,7 +86,16 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
-import { formatResourceId, formatResourceName } from '@/utils/resource';
+import {
+  getLocalizedBerryFirmnessName,
+  getLocalizedBerryFlavorName,
+  getLocalizedTypeName,
+} from '@/utils/localization';
+import {
+  formatResourceId,
+  formatResourceName,
+  getLocalizedName,
+} from '@/utils/resource';
 
 const props = defineProps({
   resource: {
@@ -97,6 +106,7 @@ const props = defineProps({
 
 const { language } = useI18n();
 const details = ref(null);
+const itemDetails = ref(null);
 const loading = ref(false);
 const errorMessage = ref('');
 let activeRequestId = 0;
@@ -106,48 +116,85 @@ const labels = computed(() => language.value === 'de'
       loading: 'Beerendetails werden geladen…',
       tryAgain: 'Erneut versuchen',
       berry: 'Beere',
-      gift: 'Natur-Kraft',
-      growthStage: 'Wachstumsphase',
-      fullGrowth: 'Gesamtwachstum',
-      maximumHarvest: 'Maximale Ernte',
+      sprite: 'Sprite',
+      firmness: 'Festigkeit',
+      naturalGift: 'Beerenkräfte',
+      growthStage: 'Dauer je Wachstumsphase',
+      fullGrowth: 'Gesamte Wachstumsdauer',
+      maximumHarvest: 'Maximaler Ertrag',
       size: 'Größe',
       smoothness: 'Glätte',
-      soilDryness: 'Bodentrockenheit',
-      giftPower: 'Natur-Kraft-Stärke',
-      giftType: 'Natur-Kraft-Typ',
-      flavorProfile: 'Aromaprofil',
-      positiveOnly: 'Nur positive Werte werden angezeigt',
-      noFlavor: 'Für diese Beere sind keine Aromawerte hinterlegt.',
+      soilDryness: 'Bodentrockenheit pro Stunde',
+      giftPower: 'Beerenkräfte-Stärke',
+      giftType: 'Beerenkräfte-Typ',
+      flavorProfile: 'Geschmacksprofil',
+      positiveOnly: 'Es werden nur Geschmackswerte über null angezeigt',
+      noFlavor: 'Für diese Beere sind keine Geschmackswerte hinterlegt.',
       loadError: 'Die Beerendetails konnten nicht geladen werden.',
     }
   : {
       loading: 'Loading berry details…',
       tryAgain: 'Try again',
       berry: 'Berry',
-      gift: 'gift',
-      growthStage: 'Growth stage',
-      fullGrowth: 'Full growth',
+      sprite: 'sprite',
+      firmness: 'Firmness',
+      naturalGift: 'Natural Gift',
+      growthStage: 'Time per growth stage',
+      fullGrowth: 'Total growth time',
       maximumHarvest: 'Maximum harvest',
       size: 'Size',
       smoothness: 'Smoothness',
-      soilDryness: 'Soil dryness',
+      soilDryness: 'Soil dryness per hour',
       giftPower: 'Natural Gift power',
       giftType: 'Natural Gift type',
       flavorProfile: 'Flavor profile',
-      positiveOnly: 'Only positive potency values are shown',
+      positiveOnly: 'Only flavor values above zero are shown',
       noFlavor: 'This berry has no recorded flavor potency.',
       loadError: 'The berry details could not be loaded.',
     });
 
+const fallbackDisplayName = computed(() => {
+  const baseName = formatResourceName(details.value?.name || props.resource.name);
+  return language.value === 'de' ? `${baseName}beere` : `${baseName} Berry`;
+});
+
+const displayName = computed(() => {
+  return getLocalizedName(
+    itemDetails.value?.names,
+    fallbackDisplayName.value,
+    language.value,
+  );
+});
+
 const spriteUrl = computed(() => {
   const itemName = details.value?.item?.name || `${details.value?.name}-berry`;
-  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${itemName}.png`;
+  return itemDetails.value?.sprites?.default
+    || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${itemName}.png`;
 });
+
+const firmnessLabel = computed(() => {
+  return getLocalizedBerryFirmnessName(
+    details.value?.firmness?.name,
+    language.value,
+  );
+});
+
+const naturalGiftTypeLabel = computed(() => {
+  return getLocalizedTypeName(
+    details.value?.natural_gift_type?.name,
+    language.value,
+  );
+});
+
 const activeFlavors = computed(() => {
   return (details.value?.flavors || [])
     .filter((entry) => entry.potency > 0)
     .sort((firstEntry, secondEntry) => secondEntry.potency - firstEntry.potency);
 });
+
+const getFlavorLabel = (name) => {
+  return getLocalizedBerryFlavorName(name, language.value);
+};
 
 const getFlavorWidth = (potency) => Math.min(100, Math.max(8, potency * 10));
 
@@ -156,13 +203,29 @@ const loadDetails = async () => {
   loading.value = true;
   errorMessage.value = '';
   details.value = null;
+  itemDetails.value = null;
+
+  const berryName = props.resource.name.replace(/-berry$/, '');
+  const itemName = `${berryName}-berry`;
 
   try {
-    const response = await PokeAPI.getBerryDetails(props.resource.name);
+    const [berryResult, itemResult] = await Promise.allSettled([
+      PokeAPI.getBerryDetails(berryName),
+      PokeAPI.getItemDetails(itemName),
+    ]);
 
-    if (requestId === activeRequestId) {
-      details.value = response.data;
+    if (requestId !== activeRequestId) {
+      return;
     }
+
+    if (berryResult.status === 'rejected') {
+      throw berryResult.reason;
+    }
+
+    details.value = berryResult.value.data;
+    itemDetails.value = itemResult.status === 'fulfilled'
+      ? itemResult.value.data
+      : null;
   } catch (requestError) {
     if (requestId === activeRequestId) {
       console.error('Failed to load berry details:', requestError);
@@ -236,6 +299,7 @@ watch(
   font-size: clamp(2rem, 5vw, 3.5rem);
   line-height: 1;
   letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
 }
 
 .badge-row {
