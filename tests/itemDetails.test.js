@@ -185,3 +185,52 @@ test('uses German attribute fallbacks when metadata requests fail', () => {
     'Im Kampf einsetzbar',
   );
 });
+
+test('does not fall back to English item attribute names in German mode', () => {
+  assert.equal(
+    getLocalizedItemMetadataName({
+      details: {
+        names: [
+          { language: { name: 'en' }, name: 'Consumable' },
+        ],
+      },
+      fallback: 'consumable',
+      language: 'de',
+      kind: 'attribute',
+    }),
+    'Verbrauchbar',
+  );
+});
+
+test('translates standard ball category in German mode', () => {
+  assert.equal(
+    getLocalizedItemMetadataName({
+      details: {
+        names: [
+          { language: { name: 'en' }, name: 'Standard Balls' },
+        ],
+      },
+      fallback: 'standard-balls',
+      language: 'de',
+      kind: 'category',
+    }),
+    'Standardbälle',
+  );
+});
+
+test('prefers an exact German metadata name when PokéAPI provides one', () => {
+  assert.equal(
+    getLocalizedItemMetadataName({
+      details: {
+        names: [
+          { language: { name: 'de' }, name: 'Offizielle Übersetzung' },
+          { language: { name: 'en' }, name: 'Official translation' },
+        ],
+      },
+      fallback: 'standard-balls',
+      language: 'de',
+      kind: 'category',
+    }),
+    'Offizielle Übersetzung',
+  );
+});
