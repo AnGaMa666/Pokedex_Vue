@@ -105,21 +105,22 @@
                   class="evolution-transition"
                   :aria-label="evolution.method"
                 >
-                  <span class="transition-arrow" aria-hidden="true">↓</span>
-                  <img
-                    v-if="evolution.item"
-                    :src="evolution.item.sprite"
-                    :alt="formatResourceName(evolution.item.name)"
-                    class="transition-item-sprite"
-                    width="40"
-                    height="40"
-                    loading="lazy"
-                  >
-                  <span class="transition-copy">
-                    <strong v-if="evolution.item">
-                      {{ formatResourceName(evolution.item.name) }}
-                    </strong>
-                    <span>{{ evolution.method }}</span>
+                  <div class="transition-line">
+                    <span class="transition-arrow" aria-hidden="true">↓</span>
+                    <span v-if="evolution.item" class="transition-item">
+                      <img
+                        :src="evolution.item.sprite"
+                        :alt="formatResourceName(evolution.item.name)"
+                        class="transition-item-sprite"
+                        width="40"
+                        height="40"
+                        loading="lazy"
+                      >
+                      <strong>{{ formatResourceName(evolution.item.name) }}</strong>
+                    </span>
+                  </div>
+                  <span v-if="evolution.method" class="transition-method">
+                    {{ evolution.method }}
                   </span>
                 </div>
 
@@ -145,18 +146,42 @@
           </div>
 
           <ul class="special-form-list">
-            <li v-for="form in specialForms" :key="form.id" class="special-form-item">
-              <span class="form-kind">
-                {{ form.kind === 'mega' ? t('pokemon.megaForm') : t('pokemon.gmaxForm') }}
-              </span>
-              <img
-                :src="getSpecialFormSprite(form)"
-                :alt="`${formatResourceName(form.name)} sprite`"
-                width="112"
-                height="112"
-                loading="lazy"
+            <li v-for="form in specialForms" :key="form.id" class="special-form-entry">
+              <div
+                v-if="form.kind === 'mega'"
+                class="evolution-transition mega-transition"
+                :aria-label="t('pokemon.megaForm')"
               >
-              <strong>{{ formatResourceName(form.name) }}</strong>
+                <div class="transition-line">
+                  <span class="transition-arrow" aria-hidden="true">↓</span>
+                  <span v-if="form.megaStone" class="transition-item">
+                    <img
+                      :src="form.megaStone.sprite"
+                      :alt="formatResourceName(form.megaStone.name)"
+                      class="transition-item-sprite"
+                      width="40"
+                      height="40"
+                      loading="lazy"
+                    >
+                    <strong>{{ formatResourceName(form.megaStone.name) }}</strong>
+                  </span>
+                </div>
+                <span class="transition-method">{{ t('pokemon.megaForm') }}</span>
+              </div>
+
+              <article class="special-form-item">
+                <span class="form-kind">
+                  {{ form.kind === 'mega' ? t('pokemon.megaForm') : t('pokemon.gmaxForm') }}
+                </span>
+                <img
+                  :src="getSpecialFormSprite(form)"
+                  :alt="`${formatResourceName(form.name)} sprite`"
+                  width="112"
+                  height="112"
+                  loading="lazy"
+                >
+                <strong>{{ formatResourceName(form.name) }}</strong>
+              </article>
             </li>
           </ul>
         </div>
@@ -687,58 +712,75 @@ watch(
   list-style: none;
 }
 
-.evolution-entry {
+.evolution-entry,
+.special-form-entry {
   display: grid;
-  flex: 1 1 170px;
-  max-width: 240px;
+  flex: 1 1 190px;
+  max-width: 260px;
   justify-items: center;
 }
 
 .evolution-transition {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  min-height: 48px;
+  width: 100%;
+  min-height: 58px;
+  justify-items: center;
+  align-content: center;
   margin-bottom: 8px;
-  padding: 5px 9px;
-  border: 1px solid #cccccc;
-  border-radius: 4px;
+  padding: 0;
+  border: 0;
   color: #333333;
-  background: #ffffff;
+  background: transparent;
+}
+
+.transition-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
 }
 
 .transition-arrow {
+  grid-column: 2;
+  justify-self: center;
   color: #333333;
-  font-size: 1.65rem;
+  font-size: 1.85rem;
   font-weight: 900;
   line-height: 1;
 }
 
+.transition-item {
+  display: inline-flex;
+  grid-column: 3;
+  gap: 4px;
+  justify-self: start;
+  align-items: center;
+  min-width: 0;
+  margin-left: 8px;
+}
+
 .transition-item-sprite {
+  flex: 0 0 auto;
   width: 40px;
   height: 40px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-.transition-copy {
-  display: grid;
-  min-width: 0;
-  text-align: left;
+.transition-item strong {
+  overflow-wrap: anywhere;
+  color: #333333;
+  font-size: 0.72rem;
+  line-height: 1.25;
 }
 
-.transition-copy strong {
-  overflow: hidden;
-  font-size: 0.75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.transition-copy span {
+.transition-method {
+  max-width: 100%;
   color: #666666;
   font-size: 0.72rem;
   line-height: 1.35;
+  text-align: center;
 }
 
 .evolution-item,
@@ -762,9 +804,9 @@ watch(
   image-rendering: pixelated;
 }
 
-.special-form-item {
-  flex: 1 1 160px;
-  max-width: 230px;
+.special-form-entry {
+  flex-basis: 210px;
+  max-width: 280px;
 }
 
 .special-form-item img {
@@ -805,6 +847,12 @@ watch(
   .sprite-frame {
     width: 112px;
   }
+
+  .evolution-entry,
+  .special-form-entry {
+    flex-basis: 100%;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 460px) {
@@ -820,8 +868,23 @@ watch(
     grid-template-columns: 1fr;
   }
 
-  .evolution-transition {
-    width: 100%;
+  .transition-line {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .transition-item {
+    gap: 2px;
+    margin-left: 4px;
+  }
+
+  .transition-item-sprite {
+    width: 34px;
+    height: 34px;
+  }
+
+  .transition-item strong {
+    max-width: 74px;
+    font-size: 0.66rem;
   }
 }
 </style>
