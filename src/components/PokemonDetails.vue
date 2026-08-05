@@ -24,7 +24,7 @@
               class="type-badge"
               :style="{ backgroundColor: getTypeColor(typeEntry.type.name) }"
             >
-              {{ formatResourceName(typeEntry.type.name) }}
+              {{ getLocalizedTypeName(typeEntry.type.name, language) }}
             </span>
           </div>
         </div>
@@ -63,23 +63,26 @@
         </div>
         <div>
           <dt>{{ t('pokemon.weaknesses') }}</dt>
-          <dd>{{ formatList(damageRelations.weaknesses) }}</dd>
+          <dd>{{ formatTypeList(damageRelations.weaknesses) }}</dd>
         </div>
         <div>
           <dt>{{ t('pokemon.resistances') }}</dt>
-          <dd>{{ formatList(damageRelations.resistances) }}</dd>
+          <dd>{{ formatTypeList(damageRelations.resistances) }}</dd>
         </div>
         <div>
           <dt>{{ t('pokemon.immunities') }}</dt>
-          <dd>{{ formatList(damageRelations.immunities) }}</dd>
+          <dd>{{ formatTypeList(damageRelations.immunities) }}</dd>
         </div>
         <div>
           <dt>{{ t('pokemon.effectiveAgainst') }}</dt>
-          <dd>{{ formatList(damageRelations.effectiveAgainst) }}</dd>
+          <dd>{{ formatTypeList(damageRelations.effectiveAgainst) }}</dd>
         </div>
       </dl>
 
-      <section v-if="evolutionStages.length || specialForms.length" class="evolution-section">
+      <section
+        v-if="evolutionStages.length || specialFormGroups.length"
+        class="evolution-section"
+      >
         <div class="section-heading">
           <h3>{{ t('pokemon.evolutionChain') }}</h3>
         </div>
@@ -111,17 +114,18 @@
                       v-if="evolution.item"
                       type="button"
                       class="transition-item"
+                      :aria-label="specialLabels.openItem.replace('{name}', getItemLabel(evolution.item.name))"
                       @click="openItem(evolution.item.name)"
                     >
                       <img
                         :src="evolution.item.sprite"
-                        :alt="formatResourceName(evolution.item.name)"
+                        :alt="getItemLabel(evolution.item.name)"
                         class="transition-item-sprite"
                         width="40"
                         height="40"
                         loading="lazy"
                       >
-                      <strong>{{ formatResourceName(evolution.item.name) }}</strong>
+                      <strong>{{ getItemLabel(evolution.item.name) }}</strong>
                     </button>
                   </div>
                   <span v-if="evolution.method" class="transition-method">
@@ -145,53 +149,114 @@
           </section>
         </div>
 
-        <div v-if="specialForms.length" class="special-forms">
+        <div v-if="specialFormGroups.length" class="special-forms">
           <div class="special-forms-heading">
             <h4>{{ t('pokemon.specialForms') }}</h4>
           </div>
 
-          <ul class="special-form-list">
-            <li v-for="form in specialForms" :key="form.id" class="special-form-entry">
-              <div
-                class="evolution-transition special-transition"
-                :aria-label="getSpecialFormMethod(form)"
+          <section
+            v-for="group in specialFormGroups"
+            :key="group.sourceSpecies.name"
+            class="special-form-group"
+          >
+            <article
+              class="special-origin"
+              :style="getTypedCardStyle(group.sourceDetails?.types)"
+            >
+              <img
+                v-if="getSourceSprite(group)"
+                :src="getSourceSprite(group)"
+                :alt="`${getSourceSpeciesLabel(group)} sprite`"
+                width="78"
+                height="78"
+                loading="lazy"
               >
-                <div class="transition-line">
-                  <span class="transition-arrow" aria-hidden="true">↓</span>
-                  <button
-                    v-if="form.megaStone"
-                    type="button"
-                    class="transition-item"
-                    :aria-label="`${getMegaStoneLabel(form.megaStone)} öffnen`"
-                    @click="openItem(form.megaStone.name)"
+              <div class="special-origin-copy">
+                <span>{{ specialLabels.normalFinalEvolution }}</span>
+                <strong>{{ getSourceSpeciesLabel(group) }}</strong>
+                <div class="compact-type-list">
+                  <span
+                    v-for="typeEntry in group.sourceDetails?.types || []"
+                    :key="typeEntry.type.name"
+                    :style="{ backgroundColor: getTypeColor(typeEntry.type.name) }"
                   >
-                    <img
-                      :src="form.megaStone.sprite"
-                      :alt="getMegaStoneLabel(form.megaStone)"
-                      class="transition-item-sprite"
-                      width="40"
-                      height="40"
-                      loading="lazy"
-                    >
-                    <strong>{{ getMegaStoneLabel(form.megaStone) }}</strong>
-                  </button>
+                    {{ getLocalizedTypeName(typeEntry.type.name, language) }}
+                  </span>
                 </div>
-                <span class="transition-method">{{ getSpecialFormMethod(form) }}</span>
               </div>
+            </article>
 
-              <article class="special-form-item">
-                <span class="form-kind">{{ getSpecialFormMethod(form) }}</span>
-                <img
-                  :src="getSpecialFormSprite(form)"
-                  :alt="`${formatResourceName(form.name)} sprite`"
-                  width="112"
-                  height="112"
-                  loading="lazy"
+            <div
+              class="branch-connector"
+              :class="{ 'is-single': group.forms.length === 1 }"
+              aria-hidden="true"
+            ></div>
+
+            <ul
+              class="special-form-list"
+              :class="{
+                'is-single': group.forms.length === 1,
+                'is-pair': group.forms.length === 2,
+              }"
+            >
+              <li
+                v-for="form in group.forms"
+                :key="form.id"
+                class="special-form-entry"
+              >
+                <div
+                  class="special-branch-transition"
+                  :aria-label="getSpecialFormMethod(form)"
                 >
-                <strong>{{ formatResourceName(form.name) }}</strong>
-              </article>
-            </li>
-          </ul>
+                  <div class="transition-line">
+                    <span class="transition-arrow" aria-hidden="true">↓</span>
+                    <button
+                      v-if="form.megaStone"
+                      type="button"
+                      class="transition-item"
+                      :aria-label="specialLabels.openItem.replace('{name}', getItemLabel(form.megaStone.name))"
+                      @click="openItem(form.megaStone.name)"
+                    >
+                      <img
+                        :src="form.megaStone.sprite"
+                        :alt="getItemLabel(form.megaStone.name)"
+                        class="transition-item-sprite"
+                        width="40"
+                        height="40"
+                        loading="lazy"
+                      >
+                      <strong>{{ getItemLabel(form.megaStone.name) }}</strong>
+                    </button>
+                  </div>
+                  <span class="transition-method">{{ getSpecialFormMethod(form) }}</span>
+                </div>
+
+                <article
+                  class="special-form-item"
+                  :style="getTypedCardStyle(form.details?.types)"
+                >
+                  <span class="form-kind">{{ getSpecialFormMethod(form) }}</span>
+                  <img
+                    :src="getSpecialFormSprite(form)"
+                    :alt="`${getSpecialFormLabel(form, group)} sprite`"
+                    width="112"
+                    height="112"
+                    loading="lazy"
+                  >
+                  <strong>{{ getSpecialFormLabel(form, group) }}</strong>
+                  <div class="compact-type-list form-types">
+                    <span
+                      v-for="typeEntry in form.details?.types || []"
+                      :key="typeEntry.type.name"
+                      :style="{ backgroundColor: getTypeColor(typeEntry.type.name) }"
+                    >
+                      {{ getLocalizedTypeName(typeEntry.type.name, language) }}
+                    </span>
+                  </div>
+                </article>
+              </li>
+            </ul>
+          </section>
         </div>
       </section>
     </template>
@@ -204,6 +269,10 @@ import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import { getEvolutionItem } from '@/utils/evolution';
 import { getFinalEvolutionSpeciesNames } from '@/utils/evolutionChain';
+import {
+  getLocalizedSpecialFormName,
+  getLocalizedTypeName,
+} from '@/utils/localization';
 import { getSpecialBattleForms } from '@/utils/pokemonForms';
 import {
   formatResourceId,
@@ -238,11 +307,23 @@ const pokemonDetails = ref(null);
 const species = ref(null);
 const rawEvolutionChain = ref(null);
 const finalEvolutionSpecies = ref([]);
+const finalPokemonDetailsByName = ref({});
+const specialFormDetailsByName = ref({});
 const itemDetailsByName = ref({});
 const damageRelations = ref(emptyDamageRelations());
 const loading = ref(false);
 const hasError = ref(false);
 let activeRequestId = 0;
+
+const specialLabels = computed(() => language.value === 'de'
+  ? {
+      normalFinalEvolution: 'Normale Endentwicklung',
+      openItem: '{name} im Itemverzeichnis öffnen',
+    }
+  : {
+      normalFinalEvolution: 'Normal final evolution',
+      openItem: 'Open {name} in the item directory',
+    });
 
 const displayName = computed(() => {
   return getLocalizedName(
@@ -275,12 +356,14 @@ const detailsStyle = computed(() => {
   };
 });
 
-const formatList = (values) => {
+const formatTypeList = (values) => {
   if (!values.length) {
     return t('common.none');
   }
 
-  return values.map(formatResourceName).join(', ');
+  return values
+    .map((value) => getLocalizedTypeName(value, language.value))
+    .join(', ');
 };
 
 const formatAbilities = (abilities) => {
@@ -302,6 +385,11 @@ const getFlavorText = (entries) => {
     || t('pokemon.noDescription');
 };
 
+const getItemLabel = (name) => {
+  const details = itemDetailsByName.value[name];
+  return getLocalizedName(details?.names, name, language.value);
+};
+
 const formatEvolutionMethod = (evolutionDetails = []) => {
   const detail = evolutionDetails[0];
 
@@ -316,7 +404,7 @@ const formatEvolutionMethod = (evolutionDetails = []) => {
     parts.push(detail.min_level ? `Level ${detail.min_level}` : t('pokemon.levelUp'));
   } else if (trigger === 'use-item') {
     parts.push(t('pokemon.useItem', {
-      item: formatResourceName(detail.item?.name || 'item'),
+      item: getItemLabel(detail.item?.name || 'item'),
     }));
   } else if (trigger === 'trade') {
     parts.push(t('pokemon.trade'));
@@ -326,7 +414,7 @@ const formatEvolutionMethod = (evolutionDetails = []) => {
 
   if (detail.held_item) {
     parts.push(t('pokemon.holding', {
-      item: formatResourceName(detail.held_item.name),
+      item: getItemLabel(detail.held_item.name),
     }));
   }
 
@@ -354,7 +442,7 @@ const formatEvolutionMethod = (evolutionDetails = []) => {
 
   if (detail.known_move_type) {
     parts.push(t('pokemon.knowingType', {
-      type: formatResourceName(detail.known_move_type.name),
+      type: getLocalizedTypeName(detail.known_move_type.name, language.value),
     }));
   }
 
@@ -380,7 +468,7 @@ const formatEvolutionMethod = (evolutionDetails = []) => {
 
   if (detail.party_type) {
     parts.push(t('pokemon.partyType', {
-      type: formatResourceName(detail.party_type.name),
+      type: getLocalizedTypeName(detail.party_type.name, language.value),
     }));
   }
 
@@ -433,32 +521,74 @@ const evolutionStages = computed(() => {
   return groupedStages.filter(Boolean);
 });
 
-const specialForms = computed(() => {
-  const formsById = new Map();
+const specialFormGroups = computed(() => {
+  return finalEvolutionSpecies.value
+    .map((sourceSpecies) => {
+      const forms = getSpecialBattleForms(sourceSpecies.varieties || [])
+        .map((form) => ({
+          ...form,
+          details: specialFormDetailsByName.value[form.name] || null,
+        }));
 
-  for (const finalSpecies of finalEvolutionSpecies.value) {
-    for (const form of getSpecialBattleForms(finalSpecies.varieties || [])) {
-      formsById.set(form.id, {
-        ...form,
-        sourceSpecies: finalSpecies.name,
-      });
-    }
-  }
+      if (!forms.length) {
+        return null;
+      }
 
-  return [...formsById.values()];
+      return {
+        sourceSpecies,
+        sourceDetails: finalPokemonDetailsByName.value[sourceSpecies.name] || null,
+        forms,
+      };
+    })
+    .filter(Boolean);
 });
 
 const getSpecialFormSprite = (form) => {
-  return props.isShiny ? form.shinySprite : form.sprite;
+  if (props.isShiny && form.details?.sprites?.front_shiny) {
+    return form.details.sprites.front_shiny;
+  }
+
+  return form.details?.sprites?.front_default
+    || (props.isShiny ? form.shinySprite : form.sprite);
 };
 
 const getSpecialFormMethod = (form) => {
   return form.kind === 'mega' ? t('pokemon.megaForm') : t('pokemon.gmaxForm');
 };
 
-const getMegaStoneLabel = (stone) => {
-  const details = itemDetailsByName.value[stone.name];
-  return getLocalizedName(details?.names, stone.name, language.value);
+const getSourceSpeciesLabel = (group) => {
+  return getLocalizedName(
+    group.sourceSpecies.names,
+    group.sourceSpecies.name,
+    language.value,
+  );
+};
+
+const getSpecialFormLabel = (form, group) => {
+  return getLocalizedSpecialFormName({
+    formName: form.name,
+    sourceName: getSourceSpeciesLabel(group),
+    kind: form.kind,
+    language: language.value,
+  });
+};
+
+const getSourceSprite = (group) => {
+  if (props.isShiny && group.sourceDetails?.sprites?.front_shiny) {
+    return group.sourceDetails.sprites.front_shiny;
+  }
+
+  return group.sourceDetails?.sprites?.front_default || '';
+};
+
+const getTypedCardStyle = (types = []) => {
+  if (!types?.length) {
+    return {};
+  }
+
+  return {
+    background: getTypeGradient(types),
+  };
 };
 
 const openItem = (name) => {
@@ -466,6 +596,21 @@ const openItem = (name) => {
     kind: 'items',
     name,
   });
+};
+
+const collectEvolutionItemNames = (node) => {
+  if (!node) {
+    return [];
+  }
+
+  const itemNames = (node.evolution_details || [])
+    .flatMap((detail) => [detail.item?.name, detail.held_item?.name])
+    .filter(Boolean);
+
+  return [
+    ...itemNames,
+    ...(node.evolves_to || []).flatMap(collectEvolutionItemNames),
+  ];
 };
 
 const loadFinalEvolutionForms = async (resolvedSpecies, resolvedChain, requestId) => {
@@ -493,23 +638,42 @@ const loadFinalEvolutionForms = async (resolvedSpecies, resolvedChain, requestId
 
   finalEvolutionSpecies.value = resolvedFinalSpecies;
 
-  const stoneNames = [...new Set(
-    resolvedFinalSpecies
-      .flatMap((entry) => getSpecialBattleForms(entry.varieties || []))
-      .map((form) => form.megaStone?.name)
-      .filter(Boolean),
-  )];
+  const forms = resolvedFinalSpecies
+    .flatMap((entry) => getSpecialBattleForms(entry.varieties || []));
+  const stoneNames = forms
+    .map((form) => form.megaStone?.name)
+    .filter(Boolean);
+  const evolutionItemNames = collectEvolutionItemNames(resolvedChain);
+  const itemNames = [...new Set([...stoneNames, ...evolutionItemNames])];
 
-  const stoneResults = await Promise.allSettled(
-    stoneNames.map((name) => PokeAPI.getItemDetails(name)),
-  );
+  const [sourceDetailResults, formDetailResults, itemResults] = await Promise.all([
+    Promise.allSettled(
+      resolvedFinalSpecies.map((entry) => PokeAPI.getPokemonDetails(entry.name)),
+    ),
+    Promise.allSettled(
+      forms.map((form) => PokeAPI.getPokemonDetails(form.name)),
+    ),
+    Promise.allSettled(
+      itemNames.map((name) => PokeAPI.getItemDetails(name)),
+    ),
+  ]);
 
   if (requestId !== activeRequestId) {
     return;
   }
 
+  finalPokemonDetailsByName.value = Object.fromEntries(
+    sourceDetailResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => [result.value.data.name, result.value.data]),
+  );
+  specialFormDetailsByName.value = Object.fromEntries(
+    formDetailResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => [result.value.data.name, result.value.data]),
+  );
   itemDetailsByName.value = Object.fromEntries(
-    stoneResults
+    itemResults
       .filter((result) => result.status === 'fulfilled')
       .map((result) => [result.value.data.name, result.value.data]),
   );
@@ -530,6 +694,8 @@ const fetchPokemonDetails = async (name) => {
   species.value = null;
   rawEvolutionChain.value = null;
   finalEvolutionSpecies.value = [];
+  finalPokemonDetailsByName.value = {};
+  specialFormDetailsByName.value = {};
   itemDetailsByName.value = {};
   damageRelations.value = emptyDamageRelations();
   emit('detailsLoaded', null);
@@ -785,8 +951,7 @@ watch(
   text-transform: uppercase;
 }
 
-.evolution-stage-list,
-.special-form-list {
+.evolution-stage-list {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
@@ -797,15 +962,15 @@ watch(
   list-style: none;
 }
 
-.evolution-entry,
-.special-form-entry {
+.evolution-entry {
   display: grid;
   flex: 1 1 190px;
   max-width: 280px;
   justify-items: center;
 }
 
-.evolution-transition {
+.evolution-transition,
+.special-branch-transition {
   display: grid;
   width: 100%;
   min-height: 58px;
@@ -883,8 +1048,7 @@ watch(
   text-align: center;
 }
 
-.evolution-item,
-.special-form-item {
+.evolution-item {
   display: grid;
   width: 100%;
   justify-items: center;
@@ -896,21 +1060,14 @@ watch(
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
-.evolution-item img,
-.special-form-item img {
+.evolution-item img {
   width: 96px;
   height: 96px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-.special-form-item img {
-  width: 112px;
-  height: 112px;
-}
-
-.evolution-item strong,
-.special-form-item strong {
+.evolution-item strong {
   color: #333333;
 }
 
@@ -921,17 +1078,180 @@ watch(
 }
 
 .special-forms-heading {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
+}
+
+.special-form-group {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  margin-top: 18px;
+}
+
+.special-origin {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: min(100%, 340px);
+  min-height: 96px;
+  padding: 10px 14px;
+  border: 1px solid #aaaaaa;
+  border-radius: 4px;
+  color: #333333;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.special-origin img {
+  flex: 0 0 auto;
+  width: 78px;
+  height: 78px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.special-origin-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.special-origin-copy > span {
+  color: #555555;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.special-origin-copy > strong {
+  margin-top: 2px;
+  font-size: 1rem;
+}
+
+.compact-type-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.compact-type-list span {
+  padding: 3px 7px;
+  border: 1px solid rgba(51, 51, 51, 0.2);
+  border-radius: 4px;
+  color: #333333;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
+.branch-connector {
+  position: relative;
+  width: min(82%, 760px);
+  height: 30px;
+}
+
+.branch-connector::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  content: '';
+  background: #777777;
+  transform: translateX(-50%);
+}
+
+.branch-connector::after {
+  position: absolute;
+  top: 15px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  content: '';
+  background: #777777;
+}
+
+.branch-connector.is-single {
+  width: 2px;
+}
+
+.special-form-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.special-form-list.is-single {
+  grid-template-columns: minmax(0, 280px);
+  justify-content: center;
+}
+
+.special-form-list.is-pair {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.special-form-entry {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  justify-items: stretch;
+}
+
+.special-form-entry::before {
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  width: 2px;
+  height: 18px;
+  content: '';
+  background: #777777;
+  transform: translateX(-50%);
+}
+
+.special-form-item {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 230px;
+  justify-items: center;
+  align-content: center;
+  padding: 14px;
+  border: 1px solid #aaaaaa;
+  border-radius: 4px;
+  color: #333333;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+}
+
+.special-form-item img {
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.special-form-item > strong {
+  margin-top: 6px;
+  color: #333333;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
 }
 
 .form-kind {
   padding: 5px 9px;
-  border: 1px solid #cccccc;
+  border: 1px solid #aaaaaa;
   border-radius: 4px;
   color: #333333;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 900;
-  background: #e0e0e0;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.form-types {
+  justify-content: center;
 }
 
 @media (max-width: 760px) {
@@ -971,15 +1291,55 @@ watch(
     padding-top: 14px;
   }
 
-  .evolution-entry,
-  .special-form-entry {
+  .evolution-entry {
     flex-basis: 100%;
     max-width: 100%;
   }
 
-  .evolution-item,
-  .special-form-item {
+  .evolution-item {
     padding: 10px;
+  }
+
+  .special-form-list,
+  .special-form-list.is-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .special-form-list.is-single {
+    grid-template-columns: minmax(0, 260px);
+  }
+
+  .branch-connector {
+    width: 76%;
+  }
+
+  .special-branch-transition {
+    min-height: 72px;
+  }
+
+  .special-form-item {
+    min-height: 205px;
+    padding: 8px;
+  }
+
+  .special-form-item img {
+    width: 94px;
+    height: 94px;
+  }
+
+  .special-form-item > strong {
+    font-size: 0.88rem;
+  }
+
+  .form-kind {
+    padding: 4px 6px;
+    font-size: 0.58rem;
+  }
+
+  .compact-type-list span {
+    padding: 2px 5px;
+    font-size: 0.56rem;
   }
 }
 
@@ -1002,13 +1362,32 @@ watch(
   }
 
   .transition-item-sprite {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
   }
 
   .transition-item strong {
-    max-width: 88px;
-    font-size: 0.66rem;
+    max-width: 72px;
+    font-size: 0.62rem;
+  }
+
+  .special-origin {
+    min-height: 82px;
+    padding: 8px 10px;
+  }
+
+  .special-origin img {
+    width: 64px;
+    height: 64px;
+  }
+
+  .special-form-item {
+    min-height: 190px;
+  }
+
+  .special-form-item img {
+    width: 86px;
+    height: 86px;
   }
 }
 </style>

@@ -1,5 +1,10 @@
 <template>
-  <article class="detail-card move-detail" :style="{ '--resource-color': typeColor }" :aria-busy="loading">
+  <article
+    class="detail-card move-detail"
+    :style="{ '--resource-color': typeColor }"
+    :aria-busy="loading"
+    :lang="language"
+  >
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
 
     <div v-else-if="errorMessage" class="error-message" role="alert">
@@ -13,8 +18,12 @@
           <p class="eyebrow">{{ labels.move }} #{{ formatResourceId(details.id) }}</p>
           <h2>{{ displayName }}</h2>
           <div class="badge-row">
-            <span class="type-badge">{{ formatResourceName(details.type?.name) }}</span>
-            <span class="neutral-badge">{{ formatResourceName(details.damage_class?.name) }}</span>
+            <span class="type-badge">
+              {{ getLocalizedTypeName(details.type?.name, language) }}
+            </span>
+            <span class="neutral-badge">
+              {{ getLocalizedDamageClassName(details.damage_class?.name, language) }}
+            </span>
           </div>
         </div>
         <span class="move-symbol" aria-hidden="true">⚡</span>
@@ -41,15 +50,15 @@
         </div>
         <div>
           <dt>{{ labels.target }}</dt>
-          <dd>{{ formatResourceName(details.target?.name) }}</dd>
+          <dd>{{ getLocalizedMoveTargetName(details.target?.name, language) }}</dd>
         </div>
         <div>
           <dt>{{ labels.generation }}</dt>
-          <dd>{{ formatResourceName(details.generation?.name) }}</dd>
+          <dd>{{ getLocalizedGenerationName(details.generation?.name, language) }}</dd>
         </div>
       </dl>
 
-      <section v-if="flavorText" class="secondary-section">
+      <section v-if="showFlavorText" class="secondary-section">
         <h3>{{ labels.gameDescription }}</h3>
         <p>{{ flavorText }}</p>
       </section>
@@ -67,10 +76,15 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
+  getLocalizedDamageClassName,
+  getLocalizedGenerationName,
+  getLocalizedMoveTargetName,
+  getLocalizedTypeName,
+} from '@/utils/localization';
+import {
   formatResourceId,
-  formatResourceName,
-  getLocalizedEffect,
   getLocalizedFlavorText,
+  getLocalizedMoveDescription,
   getLocalizedName,
 } from '@/utils/resource';
 import { getTypeColor } from '@/utils/typeColors';
@@ -122,15 +136,19 @@ const typeColor = computed(() => getTypeColor(details.value?.type?.name));
 const displayName = computed(() => {
   return getLocalizedName(details.value?.names, details.value?.name, language.value);
 });
-const effectDescription = computed(() => {
-  return getLocalizedEffect(
-    details.value?.effect_entries,
-    details.value?.effect_chance,
-    language.value,
-  );
-});
 const flavorText = computed(() => {
   return getLocalizedFlavorText(details.value?.flavor_text_entries, language.value);
+});
+const effectDescription = computed(() => {
+  return getLocalizedMoveDescription({
+    effectEntries: details.value?.effect_entries,
+    flavorTextEntries: details.value?.flavor_text_entries,
+    effectChance: details.value?.effect_chance,
+    language: language.value,
+  });
+});
+const showFlavorText = computed(() => {
+  return Boolean(flavorText.value && flavorText.value !== effectDescription.value);
 });
 
 const formatSignedNumber = (value) => {
