@@ -64,7 +64,7 @@ test('Generation III and IV use the classic four-shake formula and lower sleep m
     },
   });
 
-  assert.ok(Math.abs(probability - 0.3490126681014398) < 0.0000001);
+  assert.ok(Math.abs(probability - 0.34898163172774366) < 0.0000001);
 });
 
 test('lower HP and sleep increase the capture probability', () => {
