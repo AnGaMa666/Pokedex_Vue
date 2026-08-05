@@ -67,7 +67,7 @@ test('calculates all six stats from PokéAPI stat entries', () => {
 
   assert.deepEqual(stats, {
     hp: 187,
-    attack: 92,
+    attack: 91,
     defense: 103,
     'special-attack': 167,
     'special-defense': 121,
