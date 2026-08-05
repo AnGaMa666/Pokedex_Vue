@@ -35,6 +35,7 @@
           <section ref="detailsContainer" class="details-container" aria-live="polite">
             <PokemonProfile
               v-if="selectedPokemon"
+              :key="selectedPokemon.name"
               :pokemon="selectedPokemon"
               :is-shiny="isShiny"
               :sprite-mode="spriteMode"
@@ -44,6 +45,7 @@
 
             <MoveList
               v-if="selectedPokemonDetails?.moves?.length"
+              :key="selectedPokemonDetails.name"
               :pokemon-details="selectedPokemonDetails"
               @open-resource="openResource"
             />
@@ -204,9 +206,7 @@ const syncSectionFromHash = () => {
   }
 };
 
-const selectPokemon = async (pokemon) => {
-  selectedPokemon.value = pokemon;
-  selectedPokemonDetails.value = null;
+const scrollToPokemonDetailsOnMobile = async () => {
   await nextTick();
 
   if (window.matchMedia('(max-width: 900px)').matches) {
@@ -215,6 +215,20 @@ const selectPokemon = async (pokemon) => {
       block: 'start',
     });
   }
+};
+
+const selectPokemon = async (pokemon) => {
+  const isSamePokemon = selectedPokemon.value?.id === pokemon.id
+    && selectedPokemon.value?.name === pokemon.name;
+
+  if (isSamePokemon) {
+    await scrollToPokemonDetailsOnMobile();
+    return;
+  }
+
+  selectedPokemon.value = pokemon;
+  selectedPokemonDetails.value = null;
+  await scrollToPokemonDetailsOnMobile();
 };
 
 const updateSelectedPokemonDetails = (pokemonDetails) => {

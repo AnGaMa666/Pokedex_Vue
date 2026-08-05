@@ -65,6 +65,11 @@
           </option>
         </select>
       </label>
+
+      <label class="variant-toggle">
+        <input v-model="showVariants" type="checkbox">
+        <span>{{ labels.showVariants }}</span>
+      </label>
     </div>
 
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
@@ -81,8 +86,20 @@
     </p>
 
     <template v-else>
-      <ul class="pokemon-list" :aria-busy="enrichingPage">
-        <li v-for="pokemon in pagedPokemons" :key="pokemon.id" class="species-entry">
+      <ul ref="pokemonList" class="pokemon-list" :aria-busy="enrichingPage">
+        <li
+          v-for="pokemon in pagedPokemons"
+          :key="pokemon.id"
+          v-memo="[
+            pokemon.id === selectedPokemonId,
+            isShiny,
+            spriteMode,
+            language,
+            getSpeciesDetails(pokemon),
+            showVariants,
+          ]"
+          class="species-entry"
+        >
           <button
             type="button"
             class="pokemon-button"
@@ -100,6 +117,7 @@
                 width="72"
                 height="72"
                 loading="lazy"
+                decoding="async"
                 @error="useFallbackSprite($event, pokemon.id)"
               >
             </span>
@@ -133,7 +151,7 @@
           </button>
 
           <ul
-            v-if="getVariants(pokemon).length"
+            v-if="showVariants && getVariants(pokemon).length"
             class="variant-list"
             :aria-label="labels.variantsFor.replace('{name}', getPokemonLabel(pokemon))"
           >
@@ -154,6 +172,7 @@
                     width="52"
                     height="52"
                     loading="lazy"
+                    decoding="async"
                     @error="useFallbackSprite($event, pokemon.id)"
                   >
                 </span>
@@ -172,11 +191,18 @@
       </ul>
 
       <nav v-if="pageCount > 1" class="pagination" :aria-label="labels.pages">
-        <button type="button" :disabled="page === 1" @click="page -= 1">
+        <button type="button" :disabled="page === 1" @click="setPage(page - 1)">
           {{ labels.previous }}
         </button>
-        <span>{{ labels.page }} {{ page }} / {{ pageCount }}</span>
-        <button type="button" :disabled="page === pageCount" @click="page += 1">
+        <label class="page-selector">
+          <span class="sr-only">{{ labels.selectPage }}</span>
+          <select :value="page" @change="setPage(Number($event.target.value))">
+            <option v-for="pageNumber in pageCount" :key="pageNumber" :value="pageNumber">
+              {{ labels.page }} {{ pageNumber }} / {{ pageCount }}
+            </option>
+          </select>
+        </label>
+        <button type="button" :disabled="page === pageCount" @click="setPage(page + 1)">
           {{ labels.next }}
         </button>
       </nav>
@@ -228,8 +254,9 @@ const props = defineProps({
 
 const emit = defineEmits(['select']);
 const { language } = useI18n();
-const PAGE_SIZE = 70;
-const MAX_PARALLEL_REQUESTS = 8;
+const PAGE_SIZE = 30;
+const MAX_PARALLEL_REQUESTS = 6;
+const VARIANT_STORAGE_KEY = 'pokedex-vue:show-variants';
 const MAIN_TYPES = [
   'normal', 'fire', 'water', 'electric', 'grass', 'ice',
   'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug',
@@ -244,6 +271,7 @@ const regionalNumbers = ref(new Map());
 const allowedTypeIds = ref(null);
 const speciesDetailsByName = ref({});
 const pokedexDetailsByName = ref({});
+const pokemonList = ref(null);
 const loading = ref(true);
 const loadingRegions = ref(false);
 const loadingPokedexes = ref(false);
@@ -255,6 +283,7 @@ const selectedPokedex = ref('');
 const selectedType = ref('');
 const selectedStatus = ref('all');
 const sortMode = ref('national-asc');
+const showVariants = ref(true);
 const page = ref(1);
 let activeEnrichmentId = 0;
 let activeRegionRequestId = 0;
@@ -277,6 +306,7 @@ const labels = computed(() => language.value === 'de'
       allTypes: 'Alle Typen',
       status: 'Status',
       sort: 'Sortierung',
+      showVariants: 'Formen und Sonderformen anzeigen',
       nationalAscending: 'Nationalnummer aufsteigend',
       nationalDescending: 'Nationalnummer absteigend',
       nameAscending: 'Name A–Z',
@@ -296,6 +326,7 @@ const labels = computed(() => language.value === 'de'
       gmaxForm: 'Gigadynamax-Form',
       alternateForm: 'Alternative Form',
       pages: 'Pokémon-Seiten',
+      selectPage: 'Pokémon-Seite auswählen',
       previous: 'Zurück',
       next: 'Weiter',
       page: 'Seite',
@@ -315,6 +346,7 @@ const labels = computed(() => language.value === 'de'
       allTypes: 'All types',
       status: 'Status',
       sort: 'Sort',
+      showVariants: 'Show forms and special forms',
       nationalAscending: 'National number ascending',
       nationalDescending: 'National number descending',
       nameAscending: 'Name A–Z',
@@ -334,6 +366,7 @@ const labels = computed(() => language.value === 'de'
       gmaxForm: 'Gigantamax form',
       alternateForm: 'Alternate form',
       pages: 'Pokémon pages',
+      selectPage: 'Select Pokémon page',
       previous: 'Previous',
       next: 'Next',
       page: 'Page',
@@ -526,6 +559,44 @@ const selectPokemon = (pokemon) => emit('select', {
   image: getListSprite(pokemon.id),
 });
 
+const setPage = (nextPage) => {
+  const normalizedPage = Math.min(pageCount.value, Math.max(1, Number(nextPage) || 1));
+
+  if (page.value === normalizedPage) {
+    pokemonList.value?.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  page.value = normalizedPage;
+  requestAnimationFrame(() => {
+    pokemonList.value?.scrollTo({ top: 0, behavior: 'auto' });
+  });
+};
+
+const resetPage = () => {
+  page.value = 1;
+  requestAnimationFrame(() => {
+    pokemonList.value?.scrollTo({ top: 0, behavior: 'auto' });
+  });
+};
+
+const restoreVariantPreference = () => {
+  try {
+    const storedValue = window.localStorage.getItem(VARIANT_STORAGE_KEY);
+    showVariants.value = storedValue === null ? true : storedValue === 'true';
+  } catch {
+    showVariants.value = true;
+  }
+};
+
+const persistVariantPreference = () => {
+  try {
+    window.localStorage.setItem(VARIANT_STORAGE_KEY, String(showVariants.value));
+  } catch {
+    // The setting remains active for the current page when storage is unavailable.
+  }
+};
+
 const fetchPokemons = async () => {
   loading.value = true;
   hasError.value = false;
@@ -593,10 +664,10 @@ const loadRegionPokedexes = async () => {
     const resolvedDetails = detailResults
       .filter((result) => result.status === 'fulfilled')
       .map((result) => result.value.data);
-    pokedexDetailsByName.value = {
-      ...pokedexDetailsByName.value,
-      ...Object.fromEntries(resolvedDetails.map((details) => [details.name, details])),
-    };
+
+    for (const details of resolvedDetails) {
+      pokedexDetailsByName.value[details.name] = details;
+    }
 
     const preferred = resolvedDetails.find((details) => details.is_main_series)
       || resolvedDetails[0];
@@ -629,10 +700,7 @@ const loadPokedexEntries = async () => {
       return;
     }
 
-    pokedexDetailsByName.value = {
-      ...pokedexDetailsByName.value,
-      [response.data.name]: response.data,
-    };
+    pokedexDetailsByName.value[response.data.name] = response.data;
     regionalNumbers.value = new Map(
       (response.data.pokemon_entries || []).map((entry) => [
         entry.pokemon_species.name,
@@ -706,10 +774,7 @@ const enrichPagedSpecies = async () => {
           return;
         }
 
-        speciesDetailsByName.value = {
-          ...speciesDetailsByName.value,
-          [pokemon.name]: response.data,
-        };
+        speciesDetailsByName.value[pokemon.name] = response.data;
       } catch (requestError) {
         console.error(`Failed to load species ${pokemon.name}:`, requestError);
       }
@@ -727,31 +792,31 @@ const enrichPagedSpecies = async () => {
 };
 
 watch(selectedRegion, () => {
-  page.value = 1;
+  resetPage();
   void loadRegionPokedexes();
 });
 watch(selectedPokedex, () => {
-  page.value = 1;
+  resetPage();
   void loadPokedexEntries();
 });
 watch(selectedType, () => {
-  page.value = 1;
+  resetPage();
   void loadTypeFilter();
 });
-watch([selectedStatus, sortMode, () => props.searchQuery], () => {
-  page.value = 1;
-});
+watch([selectedStatus, sortMode, () => props.searchQuery], resetPage);
+watch(showVariants, persistVariantPreference);
 watch(
   () => `${page.value}:${pagedPokemons.value.map((pokemon) => pokemon.name).join('|')}`,
   () => void enrichPagedSpecies(),
 );
 watch(pageCount, (newPageCount) => {
   if (page.value > newPageCount) {
-    page.value = newPageCount;
+    setPage(newPageCount);
   }
 });
 
 onMounted(async () => {
+  restoreVariantPreference();
   await Promise.all([fetchPokemons(), loadRegions()]);
   void enrichPagedSpecies();
 });
@@ -761,7 +826,10 @@ onMounted(async () => {
 .pokedex {
   position: sticky;
   top: 86px;
+  display: flex;
+  flex-direction: column;
   align-self: start;
+  height: calc(100vh - 104px);
   max-height: calc(100vh - 104px);
   overflow: hidden;
   border: 1px solid var(--legacy-border);
@@ -771,6 +839,7 @@ onMounted(async () => {
 
 .list-heading {
   display: flex;
+  flex: 0 0 auto;
   gap: 14px;
   justify-content: space-between;
   align-items: flex-end;
@@ -812,6 +881,7 @@ onMounted(async () => {
 
 .filter-panel {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
   padding: 10px;
@@ -827,7 +897,8 @@ onMounted(async () => {
   font-weight: 850;
 }
 
-.filter-panel label:nth-child(5) {
+.filter-panel label:nth-child(5),
+.filter-panel .variant-toggle {
   grid-column: 1 / -1;
 }
 
@@ -840,6 +911,26 @@ onMounted(async () => {
   color: var(--legacy-text);
   background: var(--legacy-page);
   font-size: 0.76rem;
+}
+
+.filter-panel .variant-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--legacy-border);
+  color: var(--legacy-text);
+  cursor: pointer;
+  background: var(--legacy-page);
+  font-size: 0.72rem;
+}
+
+.filter-panel .variant-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--focus-color);
 }
 
 .status-message,
@@ -862,15 +953,20 @@ onMounted(async () => {
 }
 
 .pokemon-list {
-  max-height: calc(100vh - 386px);
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 6px;
   margin: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   list-style: none;
 }
 
 .species-entry {
   margin: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 96px;
 }
 
 .pokemon-button,
@@ -1042,16 +1138,19 @@ onMounted(async () => {
 
 .pagination {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  flex: 0 0 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 8px;
   border-top: 1px solid var(--legacy-border);
   background: var(--legacy-page);
+  box-shadow: 0 -4px 10px color-mix(in srgb, var(--legacy-shadow) 55%, transparent);
 }
 
-.pagination button {
-  min-height: 32px;
+.pagination button,
+.page-selector select {
+  min-height: 34px;
   padding: 5px 9px;
   border: 1px solid var(--legacy-border);
   color: var(--legacy-text);
@@ -1062,15 +1161,32 @@ onMounted(async () => {
   opacity: 0.45;
 }
 
-.pagination span {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
+.page-selector {
+  min-width: 0;
+}
+
+.page-selector select {
+  width: 100%;
   text-align: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 900px) {
   .pokedex {
     position: static;
+    display: block;
+    height: auto;
     max-height: none;
   }
 
@@ -1088,7 +1204,8 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .filter-panel label:nth-child(5) {
+  .filter-panel label:nth-child(5),
+  .filter-panel .variant-toggle {
     grid-column: auto;
   }
 
@@ -1122,6 +1239,15 @@ onMounted(async () => {
   .variant-sprite img {
     width: 42px;
     height: 42px;
+  }
+
+  .pagination {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .page-selector {
+    grid-column: 1 / -1;
+    grid-row: 1;
   }
 }
 </style>
