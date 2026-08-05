@@ -1,0 +1,120 @@
+name: Deploy Pokédex to STRATO
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pokedex-strato-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy production application
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+      url: https://pokedex.byangama.de
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build application
+        run: npm run build
+
+      - name: Install SFTP client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends lftp
+
+      - name: Validate deployment configuration
+        env:
+          STRATO_SFTP_HOST: ${{ secrets.STRATO_SFTP_HOST }}
+          STRATO_SFTP_PORT: ${{ secrets.STRATO_SFTP_PORT }}
+          STRATO_SFTP_USER: ${{ secrets.STRATO_SFTP_USER }}
+          STRATO_SFTP_PASSWORD: ${{ secrets.STRATO_SFTP_PASSWORD }}
+          STRATO_SFTP_REMOTE_PATH: ${{ secrets.STRATO_SFTP_REMOTE_PATH }}
+          STRATO_SFTP_KNOWN_HOSTS: ${{ secrets.STRATO_SFTP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          required_variables=(
+            STRATO_SFTP_HOST
+            STRATO_SFTP_PORT
+            STRATO_SFTP_USER
+            STRATO_SFTP_PASSWORD
+            STRATO_SFTP_REMOTE_PATH
+            STRATO_SFTP_KNOWN_HOSTS
+          )
+
+          for variable_name in "${required_variables[@]}"; do
+            if [ -z "${!variable_name:-}" ]; then
+              echo "Required GitHub secret ${variable_name} is missing."
+              exit 1
+            fi
+          done
+
+          case "$STRATO_SFTP_PORT" in
+            *[!0-9]*|'')
+              echo "STRATO_SFTP_PORT must contain only digits."
+              exit 1
+              ;;
+          esac
+
+          case "$STRATO_SFTP_REMOTE_PATH" in
+            ''|'/'|'.'|'./'|'..'|'../'*|*/'../'*)
+              echo "STRATO_SFTP_REMOTE_PATH must point to a dedicated, non-root web directory without parent traversal."
+              exit 1
+              ;;
+          esac
+
+          test -f dist/index.html
+          test -d dist/assets
+
+      - name: Configure trusted STRATO host key
+        env:
+          STRATO_SFTP_KNOWN_HOSTS: ${{ secrets.STRATO_SFTP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$STRATO_SFTP_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Synchronize website through SFTP
+        env:
+          LFTP_PASSWORD: ${{ secrets.STRATO_SFTP_PASSWORD }}
+          STRATO_SFTP_HOST: ${{ secrets.STRATO_SFTP_HOST }}
+          STRATO_SFTP_PORT: ${{ secrets.STRATO_SFTP_PORT }}
+          STRATO_SFTP_USER: ${{ secrets.STRATO_SFTP_USER }}
+          STRATO_SFTP_REMOTE_PATH: ${{ secrets.STRATO_SFTP_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+
+          lftp <<LFTP_COMMANDS
+          set cmd:fail-exit yes
+          set net:max-retries 2
+          set net:timeout 20
+          set net:reconnect-interval-base 5
+          set sftp:auto-confirm no
+          set sftp:connect-program "ssh -a -x -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -p $STRATO_SFTP_PORT"
+          open --env-password --user "$STRATO_SFTP_USER" "sftp://$STRATO_SFTP_HOST"
+          mirror --reverse --delete --parallel=2 --verbose=1 dist/ "$STRATO_SFTP_REMOTE_PATH"
+          bye
+          LFTP_COMMANDS

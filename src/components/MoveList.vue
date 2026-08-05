@@ -1,13 +1,20 @@
 <template>
-  <div :class="['pokemon-moves', pokemonTypeClass]" v-if="pokemonDetails && pokemonDetails.moves">
-    <div><strong>Moves:</strong></div>
+  <section
+    v-if="moves.length"
+    class="pokemon-moves"
+    :style="{ '--type-color': typeColor }"
+    aria-labelledby="move-list-title"
+  >
+    <div class="move-heading">
+      <h2 id="move-list-title">Moves</h2>
+      <span>{{ moves.length }}</span>
+    </div>
     <ul class="move-list">
-      <li v-for="move in getMoves(pokemonDetails.moves)" :key="move">{{ move }}</li>
+      <li v-for="move in moves" :key="move.name">
+        {{ move.label }}
+      </li>
     </ul>
-  </div>
-  <div v-else>
-    <strong>No moves available</strong>
-  </div>
+  </section>
 </template>
 
 <script setup>
@@ -17,147 +24,109 @@ const props = defineProps({
   pokemonDetails: {
     type: Object,
     required: true,
-    default: () => ({ moves: [], types: [] }),
   },
 });
 
-const getMoves = (moves) => {
-  return moves.map((move) => move.move.name);
-};
-
 const typeColors = {
-  fire: 'lightcoral',
-  water: 'lightblue',
-  grass: 'lightgreen',
-  electric: 'lightyellow',
-  ice: 'lightcyan',
-  fighting: 'lightpink',
-  poison: 'mediumorchid',
-  ground: 'burlywood',
-  flying: 'lightskyblue',
-  psychic: 'lightcoral',
-  bug: 'lightgreen',
-  rock: 'lightgray',
-  ghost: 'lightsteelblue',
-  dark: 'darkgray',
-  dragon: 'mediumpurple',
-  steel: 'lightgray',
-  fairy: 'lightpink',
-  normal: 'lightgray',
+  bug: '#a3b536',
+  dark: '#62574b',
+  dragon: '#6f5ad8',
+  electric: '#e7bd28',
+  fairy: '#d987ad',
+  fighting: '#b5493f',
+  fire: '#e56b3f',
+  flying: '#829edb',
+  ghost: '#665c99',
+  grass: '#5da854',
+  ground: '#cfac59',
+  ice: '#6fb8b8',
+  normal: '#91948f',
+  poison: '#9a559d',
+  psychic: '#e45c84',
+  rock: '#aa9348',
+  steel: '#8f9da7',
+  water: '#4f85cf',
 };
 
-const pokemonTypeClass = computed(() => {
-  if (props.pokemonDetails && props.pokemonDetails.types && props.pokemonDetails.types.length > 0) {
-    const type = props.pokemonDetails.types[0].type.name;
-    return `type-${type}`;
-  }
-  return 'type-default';
+const formatMoveName = (name) => {
+  return name
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+};
+
+const moves = computed(() => {
+  return props.pokemonDetails.moves
+    .map((moveEntry) => ({
+      name: moveEntry.move.name,
+      label: formatMoveName(moveEntry.move.name),
+    }))
+    .sort((firstMove, secondMove) => firstMove.label.localeCompare(secondMove.label));
+});
+
+const typeColor = computed(() => {
+  const primaryType = props.pokemonDetails.types?.[0]?.type?.name;
+  return typeColors[primaryType] || '#64748b';
 });
 </script>
 
 <style scoped>
 .pokemon-moves {
-  position: fixed;
-  top: 60px;
-  right: 0;
-  padding: 20px;
-  height: calc(100vh - 60px);
-  overflow-y: auto;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  border: 1px solid #ccc;
-  background-color: #f8f8f8;
-  max-width: 900px;
+  max-height: calc(100vh - 112px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--type-color) 42%, #d5d9e1);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(23, 32, 51, 0.08);
 }
 
-.type-fire {
-  background-color: lightcoral;
+.move-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 18px;
+  border-bottom: 4px solid var(--type-color);
 }
 
-.type-water {
-  background-color: lightblue;
+.move-heading h2 {
+  margin: 0;
+  font-size: 1.2rem;
 }
 
-.type-grass {
-  background-color: lightgreen;
-}
-
-.type-electric {
-  background-color: lightyellow;
-}
-
-.type-ice {
-  background-color: lightcyan;
-}
-
-.type-fighting {
-  background-color: lightpink;
-}
-
-.type-poison {
-  background-color: mediumorchid;
-}
-
-.type-ground {
-  background-color: burlywood;
-}
-
-.type-flying {
-  background-color: lightskyblue;
-}
-
-.type-psychic {
-  background-color: lightcoral;
-}
-
-.type-bug {
-  background-color: lightgreen;
-}
-
-.type-rock {
-  background-color: lightgray;
-}
-
-.type-ghost {
-  background-color: lightsteelblue;
-}
-
-.type-dark {
-  background-color: darkgray;
-}
-
-.type-dragon {
-  background-color: mediumpurple;
-}
-
-.type-steel {
-  background-color: lightgray;
-}
-
-.type-fairy {
-  background-color: lightpink;
-}
-
-.type-normal {
-  background-color: lightgray;
-}
-
-.type-default {
-  background-color: #f8f8f8;
+.move-heading span {
+  color: #687386;
+  font-size: 0.875rem;
 }
 
 .move-list {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  list-style-type: none;
-  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: calc(100vh - 182px);
+  padding: 14px;
   margin: 0;
+  overflow-y: auto;
+  list-style: none;
 }
 
 .move-list li {
-  padding: 5px;
-  background: #e0e0e0;
-  border-radius: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #e3e6eb;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
   text-align: center;
+  background: #f8fafc;
+}
+
+@media (max-width: 1100px) {
+  .pokemon-moves {
+    max-height: none;
+  }
+
+  .move-list {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    max-height: 420px;
+  }
 }
 </style>
