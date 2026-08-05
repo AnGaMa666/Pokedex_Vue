@@ -103,8 +103,7 @@ img {
 .error-message button,
 .facts-grid > div,
 .descriptions,
-.evolution-item,
-.special-form-item {
+.evolution-item {
   color: var(--legacy-text) !important;
   background: var(--legacy-page) !important;
 }
