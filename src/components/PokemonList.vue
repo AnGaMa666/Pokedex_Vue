@@ -65,11 +65,6 @@
           </option>
         </select>
       </label>
-
-      <label class="variant-toggle">
-        <input v-model="showVariants" type="checkbox">
-        <span>{{ labels.showVariants }}</span>
-      </label>
     </div>
 
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
@@ -138,7 +133,7 @@
           </button>
 
           <ul
-            v-if="showVariants && getVariants(pokemon).length"
+            v-if="getVariants(pokemon).length"
             class="variant-list"
             :aria-label="labels.variantsFor.replace('{name}', getPokemonLabel(pokemon))"
           >
@@ -260,7 +255,6 @@ const selectedPokedex = ref('');
 const selectedType = ref('');
 const selectedStatus = ref('all');
 const sortMode = ref('national-asc');
-const showVariants = ref(true);
 const page = ref(1);
 let activeEnrichmentId = 0;
 let activeRegionRequestId = 0;
@@ -283,7 +277,6 @@ const labels = computed(() => language.value === 'de'
       allTypes: 'Alle Typen',
       status: 'Status',
       sort: 'Sortierung',
-      showVariants: 'Formen und Varianten direkt unter der Art anzeigen',
       nationalAscending: 'Nationalnummer aufsteigend',
       nationalDescending: 'Nationalnummer absteigend',
       nameAscending: 'Name A–Z',
@@ -322,7 +315,6 @@ const labels = computed(() => language.value === 'de'
       allTypes: 'All types',
       status: 'Status',
       sort: 'Sort',
-      showVariants: 'Show forms and variants directly below their species',
       nationalAscending: 'National number ascending',
       nationalDescending: 'National number descending',
       nameAscending: 'Name A–Z',
@@ -746,7 +738,7 @@ watch(selectedType, () => {
   page.value = 1;
   void loadTypeFilter();
 });
-watch([selectedStatus, sortMode, showVariants, () => props.searchQuery], () => {
+watch([selectedStatus, sortMode, () => props.searchQuery], () => {
   page.value = 1;
 });
 watch(
@@ -850,19 +842,6 @@ onMounted(async () => {
   font-size: 0.76rem;
 }
 
-.filter-panel .variant-toggle {
-  display: flex;
-  grid-column: 1 / -1;
-  gap: 8px;
-  align-items: center;
-  min-height: 34px;
-  padding: 6px 8px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-page);
-  font-size: 0.72rem;
-}
-
 .status-message,
 .error {
   margin: 0;
@@ -883,7 +862,7 @@ onMounted(async () => {
 }
 
 .pokemon-list {
-  max-height: calc(100vh - 420px);
+  max-height: calc(100vh - 386px);
   padding: 6px;
   margin: 0;
   overflow-y: auto;
@@ -1109,8 +1088,7 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .filter-panel label:nth-child(5),
-  .filter-panel .variant-toggle {
+  .filter-panel label:nth-child(5) {
     grid-column: auto;
   }
 
