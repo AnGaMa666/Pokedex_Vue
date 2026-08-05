@@ -7,13 +7,34 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies and generated output
 node_modules
-.DS_Store
 dist
 dist-ssr
 coverage
-*.local
+*.tsbuildinfo
 
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Test artifacts
 /cypress/videos/
 /cypress/screenshots/
 
@@ -26,5 +47,3 @@ coverage
 *.njsproj
 *.sln
 *.sw?
-
-*.tsbuildinfo
