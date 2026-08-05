@@ -1,26 +1,26 @@
 <template>
   <article class="detail-card berry-detail" :aria-busy="loading">
-    <p v-if="loading" class="status-message" role="status">Loading berry details…</p>
+    <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
 
     <div v-else-if="errorMessage" class="error-message" role="alert">
       <p>{{ errorMessage }}</p>
-      <button type="button" @click="loadDetails">Try again</button>
+      <button type="button" @click="loadDetails">{{ labels.tryAgain }}</button>
     </div>
 
     <template v-else-if="details">
       <header class="detail-header">
         <div>
-          <p class="eyebrow">Berry #{{ formatResourceId(details.id, 3) }}</p>
-          <h2>{{ formatResourceName(details.name) }} Berry</h2>
+          <p class="eyebrow">{{ labels.berry }} #{{ formatResourceId(details.id, 3) }}</p>
+          <h2>{{ formatResourceName(details.name) }} {{ labels.berry }}</h2>
           <div class="badge-row">
             <span>{{ formatResourceName(details.firmness?.name) }}</span>
-            <span>{{ formatResourceName(details.natural_gift_type?.name) }} gift</span>
+            <span>{{ formatResourceName(details.natural_gift_type?.name) }} {{ labels.gift }}</span>
           </div>
         </div>
         <div class="sprite-frame">
           <img
             :src="spriteUrl"
-            :alt="`${formatResourceName(details.name)} Berry sprite`"
+            :alt="`${formatResourceName(details.name)} ${labels.berry} sprite`"
             width="96"
             height="96"
           >
@@ -29,43 +29,43 @@
 
       <dl class="facts-grid">
         <div>
-          <dt>Growth stage</dt>
+          <dt>{{ labels.growthStage }}</dt>
           <dd>{{ details.growth_time }} h</dd>
         </div>
         <div>
-          <dt>Full growth</dt>
+          <dt>{{ labels.fullGrowth }}</dt>
           <dd>{{ details.growth_time * 4 }} h</dd>
         </div>
         <div>
-          <dt>Maximum harvest</dt>
+          <dt>{{ labels.maximumHarvest }}</dt>
           <dd>{{ details.max_harvest }}</dd>
         </div>
         <div>
-          <dt>Size</dt>
+          <dt>{{ labels.size }}</dt>
           <dd>{{ details.size }} mm</dd>
         </div>
         <div>
-          <dt>Smoothness</dt>
+          <dt>{{ labels.smoothness }}</dt>
           <dd>{{ details.smoothness }}</dd>
         </div>
         <div>
-          <dt>Soil dryness</dt>
+          <dt>{{ labels.soilDryness }}</dt>
           <dd>{{ details.soil_dryness }}</dd>
         </div>
         <div>
-          <dt>Natural Gift power</dt>
+          <dt>{{ labels.giftPower }}</dt>
           <dd>{{ details.natural_gift_power }}</dd>
         </div>
         <div>
-          <dt>Natural Gift type</dt>
+          <dt>{{ labels.giftType }}</dt>
           <dd>{{ formatResourceName(details.natural_gift_type?.name) }}</dd>
         </div>
       </dl>
 
       <section class="secondary-section">
         <div class="section-heading">
-          <h3>Flavor profile</h3>
-          <span>Only positive potency values are shown</span>
+          <h3>{{ labels.flavorProfile }}</h3>
+          <span>{{ labels.positiveOnly }}</span>
         </div>
         <div class="flavor-grid">
           <div v-for="flavor in activeFlavors" :key="flavor.flavor.name">
@@ -75,7 +75,7 @@
               <span :style="{ width: `${getFlavorWidth(flavor.potency)}%` }"></span>
             </div>
           </div>
-          <p v-if="!activeFlavors.length">This berry has no recorded flavor potency.</p>
+          <p v-if="!activeFlavors.length">{{ labels.noFlavor }}</p>
         </div>
       </section>
     </template>
@@ -84,6 +84,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import { formatResourceId, formatResourceName } from '@/utils/resource';
 
@@ -94,10 +95,49 @@ const props = defineProps({
   },
 });
 
+const { language } = useI18n();
 const details = ref(null);
 const loading = ref(false);
 const errorMessage = ref('');
 let activeRequestId = 0;
+
+const labels = computed(() => language.value === 'de'
+  ? {
+      loading: 'Beerendetails werden geladen…',
+      tryAgain: 'Erneut versuchen',
+      berry: 'Beere',
+      gift: 'Natur-Kraft',
+      growthStage: 'Wachstumsphase',
+      fullGrowth: 'Gesamtwachstum',
+      maximumHarvest: 'Maximale Ernte',
+      size: 'Größe',
+      smoothness: 'Glätte',
+      soilDryness: 'Bodentrockenheit',
+      giftPower: 'Natur-Kraft-Stärke',
+      giftType: 'Natur-Kraft-Typ',
+      flavorProfile: 'Aromaprofil',
+      positiveOnly: 'Nur positive Werte werden angezeigt',
+      noFlavor: 'Für diese Beere sind keine Aromawerte hinterlegt.',
+      loadError: 'Die Beerendetails konnten nicht geladen werden.',
+    }
+  : {
+      loading: 'Loading berry details…',
+      tryAgain: 'Try again',
+      berry: 'Berry',
+      gift: 'gift',
+      growthStage: 'Growth stage',
+      fullGrowth: 'Full growth',
+      maximumHarvest: 'Maximum harvest',
+      size: 'Size',
+      smoothness: 'Smoothness',
+      soilDryness: 'Soil dryness',
+      giftPower: 'Natural Gift power',
+      giftType: 'Natural Gift type',
+      flavorProfile: 'Flavor profile',
+      positiveOnly: 'Only positive potency values are shown',
+      noFlavor: 'This berry has no recorded flavor potency.',
+      loadError: 'The berry details could not be loaded.',
+    });
 
 const spriteUrl = computed(() => {
   const itemName = details.value?.item?.name || `${details.value?.name}-berry`;
@@ -126,7 +166,7 @@ const loadDetails = async () => {
   } catch (requestError) {
     if (requestId === activeRequestId) {
       console.error('Failed to load berry details:', requestError);
-      errorMessage.value = 'The berry details could not be loaded.';
+      errorMessage.value = labels.value.loadError;
     }
   } finally {
     if (requestId === activeRequestId) {
@@ -149,9 +189,7 @@ watch(
   padding: clamp(22px, 4vw, 34px);
   border: 1px solid #e4c9e9;
   border-radius: 22px;
-  background:
-    radial-gradient(circle at 92% 8%, rgba(162, 28, 175, 0.13), transparent 18rem),
-    #ffffff;
+  background: #ffffff;
   box-shadow: 0 16px 42px rgba(23, 32, 51, 0.08);
 }
 
@@ -225,7 +263,6 @@ watch(
   border: 1px solid #e4c9e9;
   border-radius: 28px;
   background: linear-gradient(145deg, #ffffff, #fdf4ff);
-  box-shadow: 0 16px 30px rgba(162, 28, 175, 0.12);
 }
 
 .sprite-frame img {
@@ -341,16 +378,38 @@ watch(
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 760px) {
+  .detail-card {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .detail-header {
+    gap: 12px;
+  }
+
+  .detail-header h2 {
+    font-size: clamp(1.65rem, 9vw, 2.5rem);
+  }
+
   .sprite-frame {
-    width: 82px;
-    height: 82px;
-    border-radius: 22px;
+    width: 76px;
+    height: 76px;
+    border-radius: 14px;
   }
 
   .sprite-frame img {
-    width: 66px;
-    height: 66px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .facts-grid {
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .facts-grid div {
+    padding: 10px;
   }
 
   .section-heading {
@@ -359,7 +418,7 @@ watch(
   }
 }
 
-@media (max-width: 440px) {
+@media (max-width: 340px) {
   .facts-grid {
     grid-template-columns: 1fr;
   }
