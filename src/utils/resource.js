@@ -21,6 +21,10 @@ export const getLocalizedName = (names = [], fallback = '', language = 'en') => 
   return localizedName || englishName || formatResourceName(fallback);
 };
 
+const replaceEffectChance = (effect = '', effectChance = null) => {
+  return effect.replaceAll('$effect_chance', effectChance ?? '—');
+};
+
 export const getLocalizedEffect = (
   entries = [],
   effectChance = null,
@@ -36,11 +40,33 @@ export const getLocalizedEffect = (
       : 'No effect description is available.';
   }
 
-  return effect.replaceAll('$effect_chance', effectChance ?? '—');
+  return replaceEffectChance(effect, effectChance);
 };
 
 export const getLocalizedFlavorText = (entries = [], language = 'en') => {
-  const entry = entries.find((candidate) => candidate.language?.name === language)
-    || entries.find((candidate) => candidate.language?.name === 'en');
+  const localizedEntries = entries.filter((candidate) => candidate.language?.name === language);
+  const englishEntries = entries.filter((candidate) => candidate.language?.name === 'en');
+  const entry = localizedEntries.at(-1) || englishEntries.at(-1);
   return entry?.flavor_text?.replace(/[\n\f]+/g, ' ') || '';
+};
+
+export const getLocalizedMoveDescription = ({
+  effectEntries = [],
+  flavorTextEntries = [],
+  effectChance = null,
+  language = 'en',
+} = {}) => {
+  const localizedEffect = effectEntries.find((entry) => entry.language?.name === language)?.short_effect;
+
+  if (localizedEffect) {
+    return replaceEffectChance(localizedEffect, effectChance);
+  }
+
+  const localizedFlavorText = getLocalizedFlavorText(flavorTextEntries, language);
+
+  if (localizedFlavorText) {
+    return localizedFlavorText;
+  }
+
+  return getLocalizedEffect(effectEntries, effectChance, language);
 };
