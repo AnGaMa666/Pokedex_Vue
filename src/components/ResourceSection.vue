@@ -6,24 +6,24 @@
           <p class="eyebrow">{{ config.kicker }}</p>
           <h1 :id="`${kind}-title`">{{ config.title }}</h1>
         </div>
-        <span v-if="!loading && !errorMessage" class="result-count">
-          {{ filteredResources.length }} entries
+        <span v-if="!loading && !hasError" class="result-count">
+          {{ t('common.entries', { count: filteredResources.length }) }}
         </span>
       </div>
 
       <p class="directory-description">{{ config.description }}</p>
 
       <p v-if="loading" class="status-message" role="status">
-        Loading {{ config.title.toLowerCase() }}…
+        {{ t('resource.loading', { title: config.title }) }}
       </p>
 
-      <div v-else-if="errorMessage" class="error-message" role="alert">
-        <p>{{ errorMessage }}</p>
-        <button type="button" @click="loadResources">Try again</button>
+      <div v-else-if="hasError" class="error-message" role="alert">
+        <p>{{ t('resource.loadError', { title: config.title }) }}</p>
+        <button type="button" @click="loadResources">{{ t('common.tryAgain') }}</button>
       </div>
 
       <p v-else-if="!filteredResources.length" class="status-message">
-        No {{ config.singular.toLowerCase() }} matches your search.
+        {{ t('resource.noMatches', { singular: config.singular }) }}
       </p>
 
       <template v-else>
@@ -44,10 +44,14 @@
           </li>
         </ul>
 
-        <nav v-if="pageCount > 1" class="pagination" aria-label="Resource pages">
-          <button type="button" :disabled="page === 1" @click="page -= 1">Previous</button>
-          <span>Page {{ page }} of {{ pageCount }}</span>
-          <button type="button" :disabled="page === pageCount" @click="page += 1">Next</button>
+        <nav v-if="pageCount > 1" class="pagination" :aria-label="t('resource.pagesAria')">
+          <button type="button" :disabled="page === 1" @click="page -= 1">
+            {{ t('common.previous') }}
+          </button>
+          <span>{{ t('common.page', { page, pages: pageCount }) }}</span>
+          <button type="button" :disabled="page === pageCount" @click="page += 1">
+            {{ t('common.next') }}
+          </button>
         </nav>
       </template>
     </aside>
@@ -68,9 +72,9 @@
       <div v-else class="empty-detail">
         <span class="empty-symbol" :data-kind="kind" aria-hidden="true">{{ config.symbol }}</span>
         <div>
-          <h2>Choose a {{ config.singular }}</h2>
+          <h2>{{ t('resource.choose', { singular: config.singular }) }}</h2>
           <p>{{ config.emptyDescription }}</p>
-          <small>Details are fetched only after selection and then cached for this browser session.</small>
+          <small>{{ t('resource.cacheNote') }}</small>
         </div>
       </div>
     </div>
@@ -79,6 +83,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import { formatResourceId, formatResourceName, getResourceId } from '@/utils/resource';
 import BerryDetails from './BerryDetails.vue';
@@ -97,38 +102,40 @@ const props = defineProps({
   },
 });
 
-const sectionConfigs = {
+const { t } = useI18n();
+
+const sectionConfigs = computed(() => ({
   moves: {
-    title: 'Moves',
-    singular: 'Move',
-    kicker: 'Battle techniques',
+    title: t('resource.moves.title'),
+    singular: t('resource.moves.singular'),
+    kicker: t('resource.moves.kicker'),
     symbol: '⚡',
-    description: 'Search the complete move index locally. Power, type and effects are loaded only for the selected move.',
-    emptyDescription: 'Select a move to inspect its battle values, damage class, target and official effect description.',
+    description: t('resource.moves.description'),
+    emptyDescription: t('resource.moves.empty'),
     listMethod: () => PokeAPI.getMoves(),
     detailComponent: MoveDetails,
   },
   items: {
-    title: 'Items',
-    singular: 'Item',
-    kicker: 'Inventory data',
+    title: t('resource.items.title'),
+    singular: t('resource.items.singular'),
+    kicker: t('resource.items.kicker'),
     symbol: '◆',
-    description: 'Browse regular items without berries, TMs, HMs or TRs. Item details and sprites are loaded only after selection.',
-    emptyDescription: 'Select an item to inspect its price, category, attributes, sprite and in-game effect.',
+    description: t('resource.items.description'),
+    emptyDescription: t('resource.items.empty'),
     listMethod: () => PokeAPI.getItems(),
     detailComponent: ItemDetails,
   },
   berries: {
-    title: 'Berries',
-    singular: 'Berry',
-    kicker: 'Growth and flavor data',
+    title: t('resource.berries.title'),
+    singular: t('resource.berries.singular'),
+    kicker: t('resource.berries.kicker'),
     symbol: '●',
-    description: 'The berry index stays lightweight. Growth, harvest and flavor values are loaded on demand.',
-    emptyDescription: 'Select a berry to inspect its growth cycle, harvest, firmness, flavors and Natural Gift values.',
+    description: t('resource.berries.description'),
+    emptyDescription: t('resource.berries.empty'),
     listMethod: () => PokeAPI.getBerries(),
     detailComponent: BerryDetails,
   },
-};
+}));
 
 const PAGE_SIZE = 60;
 const MACHINE_ITEM_PATTERN = /^(?:tm|hm|tr)\d+$/;
@@ -136,10 +143,10 @@ const resources = ref([]);
 const selectedResource = ref(null);
 const detailPanel = ref(null);
 const loading = ref(false);
-const errorMessage = ref('');
+const hasError = ref(false);
 const page = ref(1);
 
-const config = computed(() => sectionConfigs[props.kind]);
+const config = computed(() => sectionConfigs.value[props.kind]);
 const filteredResources = computed(() => {
   const query = props.searchQuery.trim().toLowerCase();
 
@@ -169,7 +176,7 @@ const isVisibleItem = (resource) => {
 
 const loadResources = async () => {
   loading.value = true;
-  errorMessage.value = '';
+  hasError.value = false;
   selectedResource.value = null;
 
   try {
@@ -183,7 +190,7 @@ const loadResources = async () => {
       .sort((firstResource, secondResource) => firstResource.id - secondResource.id);
   } catch (requestError) {
     console.error(`Failed to load ${props.kind}:`, requestError);
-    errorMessage.value = `The ${config.value.title.toLowerCase()} index could not be loaded.`;
+    hasError.value = true;
   } finally {
     loading.value = false;
   }
@@ -415,19 +422,19 @@ onMounted(loadResources);
   height: 84px;
   place-items: center;
   border-radius: 24px;
-  color: #ffffff;
+  color: #172033;
   font-size: 2rem;
   font-weight: 900;
-  background: #d97706;
+  background: lightyellow;
   box-shadow: 0 16px 30px rgba(23, 32, 51, 0.14);
 }
 
 .empty-symbol[data-kind='items'] {
-  background: #2563eb;
+  background: lightblue;
 }
 
 .empty-symbol[data-kind='berries'] {
-  background: #a21caf;
+  background: lightpink;
 }
 
 .empty-detail h2 {
