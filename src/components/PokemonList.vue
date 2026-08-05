@@ -5,9 +5,12 @@
         <p class="list-eyebrow">{{ labels.kicker }}</p>
         <h1 id="pokemon-list-title">{{ labels.title }}</h1>
       </div>
-      <span v-if="!loading && !hasError" class="result-count">
-        {{ filteredPokemons.length }} {{ labels.results }}
-      </span>
+      <div v-if="!loading && !hasError" class="result-summary">
+        <strong>{{ filteredPokemons.length }} {{ labels.species }}</strong>
+        <small v-if="totalVariantCount > 0">
+          {{ totalVariantCount }} {{ labels.formsAndVariants }}
+        </small>
+      </div>
     </div>
 
     <div class="filter-panel" :aria-label="labels.filters">
@@ -62,6 +65,13 @@
         </select>
       </label>
     </div>
+
+    <p
+      v-if="!loading && !hasError && totalVariantCount > 0"
+      class="index-note"
+    >
+      {{ formatIndexNote() }}
+    </p>
 
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
 
@@ -191,6 +201,7 @@ const MAIN_TYPES = [
 ];
 
 const pokemons = ref([]);
+const totalPokemonEntries = ref(0);
 const regions = ref([]);
 const regionPokedexes = ref([]);
 const regionalNumbers = ref(new Map());
@@ -218,7 +229,9 @@ const labels = computed(() => language.value === 'de'
   ? {
       kicker: 'Nationaler Index',
       title: 'Pokémon-Arten',
-      results: 'Ergebnisse',
+      species: 'Arten',
+      formsAndVariants: 'Formen/Varianten in den Profilen',
+      indexNote: '{species} Einträge sind nummerierte Pokémon-Arten. Die zusätzlichen {variants} Formen und Varianten werden beim jeweiligen Pokémon-Profil angezeigt und erhalten keine eigene Nationalnummer. Insgesamt sind {total} Pokémon-Einträge verfügbar.',
       filters: 'Pokémon filtern und sortieren',
       region: 'Region',
       allRegions: 'Alle Regionen',
@@ -248,7 +261,9 @@ const labels = computed(() => language.value === 'de'
   : {
       kicker: 'National index',
       title: 'Pokémon species',
-      results: 'results',
+      species: 'species',
+      formsAndVariants: 'forms/varieties in the profiles',
+      indexNote: '{species} entries are numbered Pokémon species. The additional {variants} forms and varieties are displayed in the corresponding Pokémon profile and do not receive a separate National Pokédex number. {total} Pokémon entries are available in total.',
       filters: 'Filter and sort Pokémon',
       region: 'Region',
       allRegions: 'All regions',
@@ -303,6 +318,10 @@ const statusLabels = computed(() => language.value === 'de'
 const statusOptions = STATUS_OPTIONS;
 const typeOptions = MAIN_TYPES;
 const maximumSpeciesId = computed(() => pokemons.value.at(-1)?.id ?? 0);
+const totalVariantCount = computed(() => Math.max(
+  0,
+  totalPokemonEntries.value - pokemons.value.length,
+));
 const getSpeciesDetails = (pokemon) => speciesDetailsByName.value[pokemon.name] || null;
 const getPokemonLabel = (pokemon) => getLocalizedName(
   getSpeciesDetails(pokemon)?.names,
@@ -323,6 +342,10 @@ const getPokedexLabel = (pokedex) => getLocalizedName(
   pokedex.name,
   language.value,
 );
+const formatIndexNote = () => labels.value.indexNote
+  .replace('{species}', String(pokemons.value.length))
+  .replace('{variants}', String(totalVariantCount.value))
+  .replace('{total}', String(totalPokemonEntries.value));
 
 const filteredPokemons = computed(() => {
   const query = props.searchQuery.trim().toLocaleLowerCase(language.value);
@@ -394,13 +417,26 @@ const selectPokemon = (pokemon) => emit('select', {
 const fetchPokemons = async () => {
   loading.value = true;
   hasError.value = false;
+  totalPokemonEntries.value = 0;
 
   try {
-    const response = await PokeAPI.getPokemonSpeciesList();
-    pokemons.value = response.data.results
+    const [speciesResult, pokemonCountResult] = await Promise.allSettled([
+      PokeAPI.getPokemonSpeciesList(),
+      PokeAPI.getPokemonEntryCount(),
+    ]);
+
+    if (speciesResult.status !== 'fulfilled') {
+      throw speciesResult.reason;
+    }
+
+    pokemons.value = speciesResult.value.data.results
       .map((pokemon) => ({ ...pokemon, id: getResourceId(pokemon.url) }))
       .filter((pokemon) => pokemon.id !== null)
       .sort((firstPokemon, secondPokemon) => firstPokemon.id - secondPokemon.id);
+
+    totalPokemonEntries.value = pokemonCountResult.status === 'fulfilled'
+      ? Number(pokemonCountResult.value.data.count) || pokemons.value.length
+      : pokemons.value.length;
   } catch (requestError) {
     console.error('Failed to load Pokémon species:', requestError);
     hasError.value = true;
@@ -632,6 +668,7 @@ onMounted(async () => {
 
 .list-heading {
   display: flex;
+  gap: 12px;
   justify-content: space-between;
   align-items: flex-end;
   padding: 16px 14px 12px;
@@ -653,10 +690,25 @@ onMounted(async () => {
   text-transform: uppercase;
 }
 
-.result-count {
+.result-summary {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 2px;
+  max-width: 190px;
   color: var(--legacy-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
+  text-align: right;
+}
+
+.result-summary strong {
+  color: var(--legacy-text);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.result-summary small {
+  font-size: 0.61rem;
+  font-weight: 750;
+  line-height: 1.25;
 }
 
 .filter-panel {
@@ -691,6 +743,16 @@ onMounted(async () => {
   font-size: 0.76rem;
 }
 
+.index-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--legacy-border);
+  color: var(--legacy-muted);
+  background: color-mix(in srgb, var(--legacy-page) 82%, var(--focus-color) 18%);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
 .status-message,
 .error {
   margin: 0;
@@ -711,7 +773,7 @@ onMounted(async () => {
 }
 
 .pokemon-list {
-  max-height: calc(100vh - 382px);
+  max-height: calc(100vh - 438px);
   padding: 6px;
   margin: 0;
   overflow-y: auto;
@@ -860,6 +922,14 @@ onMounted(async () => {
 }
 
 @media (max-width: 460px) {
+  .list-heading {
+    align-items: start;
+  }
+
+  .result-summary {
+    max-width: 132px;
+  }
+
   .filter-panel {
     grid-template-columns: 1fr;
   }

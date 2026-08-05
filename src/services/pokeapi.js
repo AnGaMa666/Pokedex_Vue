@@ -133,6 +133,16 @@ const getResourceList = (endpoint) => {
   });
 };
 
+const getResourceCount = (endpoint) => {
+  return cachedGet(endpoint, {
+    params: {
+      limit: 1,
+      offset: 0,
+    },
+    ttl: LIST_CACHE_TTL,
+  });
+};
+
 const getNamedResource = (endpoint, nameOrId) => {
   return cachedGet(`${endpoint}/${encodeURIComponent(nameOrId)}`);
 };
@@ -178,6 +188,10 @@ const getSpecialItemCollection = () => {
 export default {
   getPokemons() {
     return getResourceList('pokemon');
+  },
+
+  getPokemonEntryCount() {
+    return getResourceCount('pokemon');
   },
 
   getPokemonSpeciesList() {
