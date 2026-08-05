@@ -63,9 +63,7 @@
       </label>
     </div>
 
-    <p v-if="loading" class="status-message" role="status">
-      {{ labels.loading }}
-    </p>
+    <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
 
     <div v-else-if="hasError" class="error" role="alert">
       <p>{{ labels.loadError }}</p>
@@ -118,7 +116,7 @@
               </span>
               <span class="status-row">
                 <span
-                  v-for="classification in getClassifications(pokemon)"
+                  v-for="classification in getVisibleClassifications(pokemon)"
                   :key="classification"
                   class="status-chip"
                 >
@@ -184,7 +182,6 @@ const props = defineProps({
 
 const emit = defineEmits(['select']);
 const { language } = useI18n();
-
 const PAGE_SIZE = 70;
 const MAX_PARALLEL_REQUESTS = 8;
 const MAIN_TYPES = [
@@ -213,7 +210,9 @@ const selectedStatus = ref('all');
 const sortMode = ref('national-asc');
 const page = ref(1);
 let activeEnrichmentId = 0;
-let activeFilterRequestId = 0;
+let activeRegionRequestId = 0;
+let activePokedexRequestId = 0;
+let activeTypeRequestId = 0;
 
 const labels = computed(() => language.value === 'de'
   ? {
@@ -303,35 +302,32 @@ const statusLabels = computed(() => language.value === 'de'
 
 const statusOptions = STATUS_OPTIONS;
 const typeOptions = MAIN_TYPES;
-const maximumSpeciesId = computed(() => {
-  return pokemons.value.at(-1)?.id ?? 0;
-});
-
+const maximumSpeciesId = computed(() => pokemons.value.at(-1)?.id ?? 0);
 const getSpeciesDetails = (pokemon) => speciesDetailsByName.value[pokemon.name] || null;
-const getPokemonLabel = (pokemon) => {
-  const details = getSpeciesDetails(pokemon);
-  return getLocalizedName(details?.names, pokemon.name, language.value);
-};
-const getClassifications = (pokemon) => {
-  return getPokemonClassifications(pokemon.id, getSpeciesDetails(pokemon))
-    .filter((classification) => classification !== 'regular' || selectedStatus.value === 'regular');
-};
-const getRegionalNumber = (pokemon) => {
-  return regionalNumbers.value.has(pokemon.name)
-    ? regionalNumbers.value.get(pokemon.name)
-    : null;
-};
+const getPokemonLabel = (pokemon) => getLocalizedName(
+  getSpeciesDetails(pokemon)?.names,
+  pokemon.name,
+  language.value,
+);
+const getVisibleClassifications = (pokemon) => getPokemonClassifications(
+  pokemon.id,
+  getSpeciesDetails(pokemon),
+).filter((classification) => classification !== 'regular' || selectedStatus.value === 'regular');
+const getRegionalNumber = (pokemon) => regionalNumbers.value.has(pokemon.name)
+  ? regionalNumbers.value.get(pokemon.name)
+  : null;
 const getTypeLabel = (type) => getLocalizedTypeName(type, language.value);
 const getStatusLabel = (status) => statusLabels.value[status] || status;
-const getPokedexLabel = (pokedex) => {
-  const details = pokedexDetailsByName.value[pokedex.name];
-  return getLocalizedName(details?.names, pokedex.name, language.value);
-};
+const getPokedexLabel = (pokedex) => getLocalizedName(
+  pokedexDetailsByName.value[pokedex.name]?.names,
+  pokedex.name,
+  language.value,
+);
 
 const filteredPokemons = computed(() => {
   const query = props.searchQuery.trim().toLocaleLowerCase(language.value);
   const regionalMap = regionalNumbers.value;
-  let entries = pokemons.value.filter((pokemon) => {
+  const entries = pokemons.value.filter((pokemon) => {
     const label = getPokemonLabel(pokemon).toLocaleLowerCase(language.value);
     const matchesQuery = !query
       || pokemon.name.includes(query)
@@ -345,11 +341,10 @@ const filteredPokemons = computed(() => {
       selectedStatus.value,
       getSpeciesDetails(pokemon),
     );
-
     return matchesQuery && matchesRegion && matchesType && matchesStatus;
   });
 
-  entries = [...entries].sort((firstPokemon, secondPokemon) => {
+  return [...entries].sort((firstPokemon, secondPokemon) => {
     if (sortMode.value === 'national-desc') {
       return secondPokemon.id - firstPokemon.id;
     }
@@ -368,8 +363,6 @@ const filteredPokemons = computed(() => {
 
     return firstPokemon.id - secondPokemon.id;
   });
-
-  return entries;
 });
 
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredPokemons.value.length / PAGE_SIZE)));
@@ -383,28 +376,20 @@ const formatName = (name) => name
   .split('-')
   .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
   .join(' ');
-
-const getListSprite = (id) => {
-  return getPokemonListSprite(id, props.spriteMode, props.isShiny);
-};
-
+const getListSprite = (id) => getPokemonListSprite(id, props.spriteMode, props.isShiny);
 const useFallbackSprite = (event, id) => {
   const fallback = getPokemonListSprite(id, 'pixel', props.isShiny);
 
   if (event.currentTarget.src !== fallback) {
     event.currentTarget.src = fallback;
-    return;
+  } else {
+    event.currentTarget.hidden = true;
   }
-
-  event.currentTarget.hidden = true;
 };
-
-const selectPokemon = (pokemon) => {
-  emit('select', {
-    ...pokemon,
-    image: getListSprite(pokemon.id),
-  });
-};
+const selectPokemon = (pokemon) => emit('select', {
+  ...pokemon,
+  image: getListSprite(pokemon.id),
+});
 
 const fetchPokemons = async () => {
   loading.value = true;
@@ -413,10 +398,7 @@ const fetchPokemons = async () => {
   try {
     const response = await PokeAPI.getPokemonSpeciesList();
     pokemons.value = response.data.results
-      .map((pokemon) => ({
-        ...pokemon,
-        id: getResourceId(pokemon.url),
-      }))
+      .map((pokemon) => ({ ...pokemon, id: getResourceId(pokemon.url) }))
       .filter((pokemon) => pokemon.id !== null)
       .sort((firstPokemon, secondPokemon) => firstPokemon.id - secondPokemon.id);
   } catch (requestError) {
@@ -441,12 +423,13 @@ const loadRegions = async () => {
 };
 
 const loadRegionPokedexes = async () => {
-  const requestId = ++activeFilterRequestId;
+  const requestId = ++activeRegionRequestId;
   selectedPokedex.value = '';
   regionPokedexes.value = [];
   regionalNumbers.value = new Map();
 
   if (!selectedRegion.value) {
+    loadingPokedexes.value = false;
     return;
   }
 
@@ -455,50 +438,41 @@ const loadRegionPokedexes = async () => {
   try {
     const response = await PokeAPI.getRegionDetails(selectedRegion.value);
 
-    if (requestId !== activeFilterRequestId) {
+    if (requestId !== activeRegionRequestId) {
       return;
     }
 
     regionPokedexes.value = response.data.pokedexes || [];
-
     const detailResults = await Promise.allSettled(
       regionPokedexes.value.map((pokedex) => PokeAPI.getPokedexDetails(pokedex.name)),
     );
 
-    if (requestId !== activeFilterRequestId) {
+    if (requestId !== activeRegionRequestId) {
       return;
     }
 
+    const resolvedDetails = detailResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value.data);
     pokedexDetailsByName.value = {
       ...pokedexDetailsByName.value,
-      ...Object.fromEntries(
-        detailResults
-          .filter((result) => result.status === 'fulfilled')
-          .map((result) => [result.value.data.name, result.value.data]),
-      ),
+      ...Object.fromEntries(resolvedDetails.map((details) => [details.name, details])),
     };
 
-    const mainSeriesPokedex = detailResults
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => result.value.data)
-      .find((pokedex) => pokedex.is_main_series);
-
-    if (mainSeriesPokedex) {
-      selectedPokedex.value = mainSeriesPokedex.name;
-    } else if (regionPokedexes.value.length === 1) {
-      selectedPokedex.value = regionPokedexes.value[0].name;
-    }
+    const preferred = resolvedDetails.find((details) => details.is_main_series)
+      || resolvedDetails[0];
+    selectedPokedex.value = preferred?.name || '';
   } catch (requestError) {
     console.error('Failed to load regional Pokédexes:', requestError);
   } finally {
-    if (requestId === activeFilterRequestId) {
+    if (requestId === activeRegionRequestId) {
       loadingPokedexes.value = false;
     }
   }
 };
 
 const loadPokedexEntries = async () => {
-  const requestId = ++activeFilterRequestId;
+  const requestId = ++activePokedexRequestId;
   regionalNumbers.value = new Map();
 
   if (!selectedPokedex.value) {
@@ -512,7 +486,7 @@ const loadPokedexEntries = async () => {
       ? { data: pokedexDetailsByName.value[selectedPokedex.value] }
       : await PokeAPI.getPokedexDetails(selectedPokedex.value);
 
-    if (requestId !== activeFilterRequestId) {
+    if (requestId !== activePokedexRequestId) {
       return;
     }
 
@@ -529,17 +503,18 @@ const loadPokedexEntries = async () => {
   } catch (requestError) {
     console.error('Failed to load Pokédex entries:', requestError);
   } finally {
-    if (requestId === activeFilterRequestId) {
+    if (requestId === activePokedexRequestId) {
       loadingPokedexes.value = false;
     }
   }
 };
 
 const loadTypeFilter = async () => {
-  const requestId = ++activeFilterRequestId;
+  const requestId = ++activeTypeRequestId;
   allowedTypeIds.value = null;
 
   if (!selectedType.value) {
+    loadingTypes.value = false;
     return;
   }
 
@@ -548,7 +523,7 @@ const loadTypeFilter = async () => {
   try {
     const response = await PokeAPI.getTypeDetails(selectedType.value);
 
-    if (requestId !== activeFilterRequestId) {
+    if (requestId !== activeTypeRequestId) {
       return;
     }
 
@@ -561,7 +536,7 @@ const loadTypeFilter = async () => {
     console.error('Failed to load type filter:', requestError);
     allowedTypeIds.value = new Set();
   } finally {
-    if (requestId === activeFilterRequestId) {
+    if (requestId === activeTypeRequestId) {
       loadingTypes.value = false;
     }
   }
@@ -580,12 +555,10 @@ const enrichPagedSpecies = async () => {
 
   enrichingPage.value = true;
   let nextIndex = 0;
-
   const worker = async () => {
     while (nextIndex < missingEntries.length) {
-      const index = nextIndex;
+      const pokemon = missingEntries[nextIndex];
       nextIndex += 1;
-      const pokemon = missingEntries[index];
 
       try {
         const response = await PokeAPI.getPokemonSpecies(pokemon.name);
@@ -604,8 +577,10 @@ const enrichPagedSpecies = async () => {
     }
   };
 
-  const workerCount = Math.min(MAX_PARALLEL_REQUESTS, missingEntries.length);
-  await Promise.all(Array.from({ length: workerCount }, worker));
+  await Promise.all(Array.from(
+    { length: Math.min(MAX_PARALLEL_REQUESTS, missingEntries.length) },
+    worker,
+  ));
 
   if (enrichmentId === activeEnrichmentId) {
     enrichingPage.value = false;
@@ -616,35 +591,21 @@ watch(selectedRegion, () => {
   page.value = 1;
   void loadRegionPokedexes();
 });
-
 watch(selectedPokedex, () => {
   page.value = 1;
   void loadPokedexEntries();
 });
-
 watch(selectedType, () => {
   page.value = 1;
   void loadTypeFilter();
 });
-
-watch([selectedStatus, sortMode], () => {
+watch([selectedStatus, sortMode, () => props.searchQuery], () => {
   page.value = 1;
 });
-
-watch(
-  () => props.searchQuery,
-  () => {
-    page.value = 1;
-  },
-);
-
 watch(
   () => `${page.value}:${pagedPokemons.value.map((pokemon) => pokemon.name).join('|')}`,
-  () => {
-    void enrichPagedSpecies();
-  },
+  () => void enrichPagedSpecies(),
 );
-
 watch(pageCount, (newPageCount) => {
   if (page.value > newPageCount) {
     page.value = newPageCount;
@@ -665,7 +626,6 @@ onMounted(async () => {
   max-height: calc(100vh - 104px);
   overflow: hidden;
   border: 1px solid var(--legacy-border);
-  border-radius: 4px;
   background: var(--legacy-surface);
   box-shadow: 0 2px 5px var(--legacy-shadow);
 }
@@ -681,7 +641,6 @@ onMounted(async () => {
 
 .list-heading h1 {
   margin: 0;
-  color: var(--legacy-text);
   font-size: 1.35rem;
 }
 
@@ -706,7 +665,6 @@ onMounted(async () => {
   gap: 7px;
   padding: 10px;
   border-bottom: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
 }
 
 .filter-panel label {
@@ -723,12 +681,11 @@ onMounted(async () => {
 }
 
 .filter-panel select {
-  min-width: 0;
   width: 100%;
+  min-width: 0;
   min-height: 34px;
   padding: 5px 7px;
   border: 1px solid var(--legacy-border);
-  border-radius: 4px;
   color: var(--legacy-text);
   background: var(--legacy-page);
   font-size: 0.76rem;
@@ -742,16 +699,14 @@ onMounted(async () => {
 }
 
 .error {
-  color: #b91c1c;
+  color: var(--danger-color);
 }
 
 .retry-button {
   margin-top: 8px;
   padding: 8px 12px;
-  border: 1px solid #b91c1c;
-  border-radius: 4px;
-  color: #b91c1c;
-  cursor: pointer;
+  border: 1px solid var(--danger-color);
+  color: var(--danger-color);
   background: var(--legacy-page);
 }
 
@@ -761,8 +716,6 @@ onMounted(async () => {
   margin: 0;
   overflow-y: auto;
   list-style: none;
-  scrollbar-color: var(--legacy-border-strong) transparent;
-  scrollbar-width: thin;
 }
 
 .pokemon-button {
@@ -774,10 +727,8 @@ onMounted(async () => {
   min-height: 88px;
   padding: 6px 9px 6px 6px;
   border: 1px solid transparent;
-  border-radius: 4px;
   color: var(--legacy-text);
   text-align: left;
-  cursor: pointer;
   background: transparent;
 }
 
@@ -792,11 +743,6 @@ onMounted(async () => {
   box-shadow: inset 4px 0 0 #888888;
 }
 
-.pokemon-button:focus-visible {
-  outline: 2px solid #888888;
-  outline-offset: -2px;
-}
-
 .sprite-frame {
   display: grid;
   width: 72px;
@@ -804,7 +750,6 @@ onMounted(async () => {
   place-items: center;
   overflow: hidden;
   border: 1px solid var(--legacy-border);
-  border-radius: 4px;
   background: var(--legacy-page);
 }
 
@@ -835,11 +780,10 @@ onMounted(async () => {
   font-size: 0.69rem;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
 }
 
 .regional-number {
-  color: #2563eb;
+  color: var(--focus-color);
 }
 
 .pokemon-name {
@@ -890,15 +834,12 @@ onMounted(async () => {
   min-height: 32px;
   padding: 5px 9px;
   border: 1px solid var(--legacy-border);
-  border-radius: 4px;
   color: var(--legacy-text);
-  cursor: pointer;
   background: var(--legacy-surface);
 }
 
 .pagination button:disabled {
   opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .pagination span {
