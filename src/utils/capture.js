@@ -1,11 +1,29 @@
 export const CAPTURE_STATUSES = [
-  { id: 'none', modifier: 1 },
-  { id: 'paralysis', modifier: 1.5 },
-  { id: 'poison', modifier: 1.5 },
-  { id: 'burn', modifier: 1.5 },
-  { id: 'sleep', modifier: 2.5 },
-  { id: 'freeze', modifier: 2.5 },
+  { id: 'none' },
+  { id: 'paralysis' },
+  { id: 'poison' },
+  { id: 'burn' },
+  { id: 'sleep' },
+  { id: 'freeze' },
 ];
+
+export const CAPTURE_MECHANICS = [
+  { id: 'gen9', generation: 9 },
+  { id: 'gen8', generation: 8 },
+  { id: 'gen6-7', generation: 7 },
+  { id: 'gen5', generation: 5 },
+  { id: 'gen3-4', generation: 4 },
+];
+
+const getMechanicsId = (context = {}) => {
+  return CAPTURE_MECHANICS.some((entry) => entry.id === context.mechanics)
+    ? context.mechanics
+    : 'gen9';
+};
+
+const getGeneration = (context = {}) => {
+  return CAPTURE_MECHANICS.find((entry) => entry.id === getMechanicsId(context))?.generation ?? 9;
+};
 
 export const BALLS = [
   { name: 'poke-ball', fixedMultiplier: 1 },
@@ -21,37 +39,85 @@ export const BALLS = [
   { name: 'cherish-ball', fixedMultiplier: 1 },
   {
     name: 'net-ball',
-    getMultiplier: (context) => context.isWaterOrBug ? 3.5 : 1,
+    getMultiplier: (context) => {
+      if (!context.isWaterOrBug) {
+        return 1;
+      }
+
+      return getGeneration(context) >= 7 ? 3.5 : 3;
+    },
     condition: 'waterOrBug',
   },
   {
     name: 'dive-ball',
-    getMultiplier: (context) => context.isFishingOrUnderwater ? 3.5 : 1,
+    getMultiplier: (context) => {
+      if (!context.isFishingOrUnderwater) {
+        return 1;
+      }
+
+      return getGeneration(context) >= 5 ? 3.5 : 3.5;
+    },
     condition: 'fishingOrUnderwater',
   },
   {
     name: 'nest-ball',
-    getMultiplier: (context) => Math.max(1, Math.min(4, (41 - context.targetLevel) / 10)),
+    getMultiplier: (context) => {
+      const generation = getGeneration(context);
+      const targetLevel = clamp(context.targetLevel, 1, 100);
+
+      if (generation <= 4) {
+        return Math.max(1, Math.min(3, (40 - targetLevel) / 10));
+      }
+
+      return Math.max(1, Math.min(4, (41 - targetLevel) / 10));
+    },
     condition: 'lowLevel',
   },
   {
     name: 'repeat-ball',
-    getMultiplier: (context) => context.caughtBefore ? 3.5 : 1,
+    getMultiplier: (context) => {
+      if (!context.caughtBefore) {
+        return 1;
+      }
+
+      return getGeneration(context) >= 7 ? 3.5 : 3;
+    },
     condition: 'caughtBefore',
   },
   {
     name: 'timer-ball',
-    getMultiplier: (context) => Math.min(4, 1 + Math.max(0, context.turns - 1) * 0.3),
+    getMultiplier: (context) => {
+      const turns = clamp(context.turns, 1, 99);
+      const generation = getGeneration(context);
+
+      if (generation <= 4) {
+        return Math.min(4, 1 + Math.max(0, turns - 1) * 0.1);
+      }
+
+      return Math.min(4, 1 + Math.max(0, turns) * 0.3);
+    },
     condition: 'turns',
   },
   {
     name: 'dusk-ball',
-    getMultiplier: (context) => context.isNightOrCave ? 3 : 1,
+    getMultiplier: (context) => {
+      if (!context.isNightOrCave) {
+        return 1;
+      }
+
+      return getGeneration(context) >= 7 ? 3 : 3.5;
+    },
     condition: 'nightOrCave',
   },
   {
     name: 'quick-ball',
-    getMultiplier: (context) => context.turns <= 1 ? 5 : 1,
+    getMultiplier: (context) => {
+      if (clamp(context.turns, 1, 99) > 1) {
+        return 1;
+      }
+
+      return getGeneration(context) >= 5 ? 5 : 4;
+    },
     condition: 'firstTurn',
   },
   {
@@ -62,15 +128,18 @@ export const BALLS = [
   {
     name: 'level-ball',
     getMultiplier: (context) => {
-      if (context.playerLevel >= context.targetLevel * 4) {
+      const playerLevel = clamp(context.playerLevel, 1, 100);
+      const targetLevel = clamp(context.targetLevel, 1, 100);
+
+      if (playerLevel >= targetLevel * 4) {
         return 8;
       }
 
-      if (context.playerLevel >= context.targetLevel * 2) {
+      if (playerLevel >= targetLevel * 2) {
         return 4;
       }
 
-      if (context.playerLevel > context.targetLevel) {
+      if (playerLevel > targetLevel) {
         return 2;
       }
 
@@ -80,22 +149,31 @@ export const BALLS = [
   },
   {
     name: 'lure-ball',
-    getMultiplier: (context) => context.isFishingOrUnderwater ? 4 : 1,
+    getMultiplier: (context) => {
+      if (!context.isFishingOrUnderwater) {
+        return 1;
+      }
+
+      const generation = getGeneration(context);
+      return generation >= 8 ? 5 : generation >= 7 ? 3 : 3;
+    },
     condition: 'fishing',
   },
   {
     name: 'heavy-ball',
     fixedMultiplier: 1,
     getRateAdjustment: (context) => {
-      if (context.targetWeightKg < 100) {
+      const weight = clamp(context.targetWeightKg, 0, 9999);
+
+      if (weight < 100) {
         return -20;
       }
 
-      if (context.targetWeightKg < 200) {
+      if (weight < 200) {
         return 0;
       }
 
-      if (context.targetWeightKg < 300) {
+      if (weight < 300) {
         return 20;
       }
 
@@ -115,7 +193,7 @@ export const BALLS = [
   },
   {
     name: 'dream-ball',
-    getMultiplier: (context) => ['sleep', 'freeze'].includes(context.status) ? 4 : 1,
+    getMultiplier: (context) => context.status === 'sleep' ? 4 : 1,
     condition: 'sleeping',
   },
   {
@@ -129,8 +207,74 @@ const clamp = (value, minimum, maximum) => {
   return Math.min(maximum, Math.max(minimum, Number(value) || 0));
 };
 
-const getStatusModifier = (status) => {
-  return CAPTURE_STATUSES.find((entry) => entry.id === status)?.modifier ?? 1;
+const getStatusModifier = (status, context) => {
+  if (['sleep', 'freeze'].includes(status)) {
+    return getGeneration(context) <= 4 ? 2 : 2.5;
+  }
+
+  if (['paralysis', 'poison', 'burn'].includes(status)) {
+    return 1.5;
+  }
+
+  return 1;
+};
+
+const getCapturePowerModifier = (context) => {
+  const level = clamp(context.capturePower, 0, 3);
+
+  if (level === 1) {
+    return getGeneration(context) >= 9 ? 1.1 : 1.1;
+  }
+
+  if (level === 2) {
+    return getGeneration(context) >= 9 ? 1.25 : 1.2;
+  }
+
+  if (level === 3) {
+    return getGeneration(context) >= 9 ? 2 : 1.3;
+  }
+
+  return 1;
+};
+
+const getBadgePenalty = (context) => {
+  if (getMechanicsId(context) !== 'gen9') {
+    return 1;
+  }
+
+  const badges = Math.trunc(clamp(context.badges, 0, 8));
+  const targetLevel = clamp(context.targetLevel, 1, 100);
+  const obedienceLimits = [20, 25, 30, 35, 40, 45, 50, 55, 100];
+  const currentLimit = obedienceLimits[badges];
+
+  if (targetLevel <= currentLimit + 5) {
+    return 1;
+  }
+
+  const requiredBadges = obedienceLimits.findIndex((limit) => targetLevel <= limit);
+  const missingBadges = Math.max(0, (requiredBadges < 0 ? 8 : requiredBadges) - badges);
+  return 0.8 ** missingBadges;
+};
+
+const getLevelModifier = (context) => {
+  const targetLevel = clamp(context.targetLevel, 1, 100);
+  const mechanics = getMechanicsId(context);
+
+  if (mechanics === 'gen8') {
+    return Math.max((30 - targetLevel) / 10, 1);
+  }
+
+  if (mechanics === 'gen9' && targetLevel < 13) {
+    return Math.max((36 - 2 * targetLevel) / 10, 1);
+  }
+
+  return 1;
+};
+
+const getMiscModifier = (context) => {
+  const capturePower = getCapturePowerModifier(context);
+  const backStrike = getMechanicsId(context) === 'gen9' && context.backStrike ? 2 : 1;
+  return capturePower * backStrike;
 };
 
 export const getBallModifier = (ball, context) => {
@@ -139,7 +283,80 @@ export const getBallModifier = (ball, context) => {
 
 export const getAdjustedCatchRate = (captureRate, ball, context) => {
   const adjustment = ball.getRateAdjustment?.(context) ?? 0;
-  return clamp(Number(captureRate) + adjustment, 1, 255);
+  const minimum = getMechanicsId(context) === 'gen7-sun-moon' ? 0 : 1;
+  return clamp(Number(captureRate) + adjustment, minimum, 255);
+};
+
+const calculateGenerationThreeOrFourProbability = ({
+  captureRate,
+  ball,
+  context,
+}) => {
+  const maximumHp = clamp(context.maxHp, 1, 9999);
+  const currentHp = clamp(context.currentHp, 1, maximumHp);
+  const hpFactor = (3 * maximumHp - 2 * currentHp) / (3 * maximumHp);
+  const adjustedCatchRate = getAdjustedCatchRate(captureRate, ball, context);
+  const ballModifier = getBallModifier(ball, context);
+  const statusModifier = getStatusModifier(context.status, context);
+  const modifiedRate = Math.floor(
+    hpFactor * adjustedCatchRate * ballModifier * statusModifier,
+  );
+
+  if (modifiedRate >= 255) {
+    return 1;
+  }
+
+  if (modifiedRate <= 0) {
+    return 0;
+  }
+
+  const shakeThreshold = Math.floor(
+    1048560 / Math.sqrt(Math.sqrt(16711680 / modifiedRate)),
+  );
+  const singleShakeChance = clamp(shakeThreshold / 65536, 0, 1);
+  return clamp(singleShakeChance ** 4, 0, 1);
+};
+
+const calculateModernProbability = ({
+  captureRate,
+  ball,
+  context,
+}) => {
+  const maximumHp = clamp(context.maxHp, 1, 9999);
+  const currentHp = clamp(context.currentHp, 1, maximumHp);
+  const hpFactor = (3 * maximumHp - 2 * currentHp) / (3 * maximumHp);
+  const adjustedCatchRate = getAdjustedCatchRate(captureRate, ball, context);
+  const ballModifier = getBallModifier(ball, context);
+  const statusModifier = getStatusModifier(context.status, context);
+  const badgePenalty = getBadgePenalty(context);
+  const levelModifier = getLevelModifier(context);
+  const miscModifier = getMiscModifier(context);
+  const baseValue = Math.floor(
+    hpFactor * 4096 * adjustedCatchRate * ballModifier * badgePenalty,
+  );
+  const modifiedRate = Math.floor(
+    baseValue * levelModifier * statusModifier * miscModifier,
+  );
+  const maximumRate = 255 * 4096;
+
+  if (modifiedRate >= maximumRate) {
+    return 1;
+  }
+
+  if (modifiedRate <= 0) {
+    return 0;
+  }
+
+  const ratio = clamp(modifiedRate / maximumRate, 0, 1);
+  const mechanics = getMechanicsId(context);
+
+  if (mechanics === 'gen5') {
+    const shakeThreshold = Math.floor(65536 * ratio ** 0.25);
+    return clamp((shakeThreshold / 65536) ** 3, 0, 1);
+  }
+
+  const shakeThreshold = Math.floor(65536 * ratio ** 0.1875);
+  return clamp((shakeThreshold / 65536) ** 4, 0, 1);
 };
 
 export const calculateCaptureProbability = ({
@@ -151,25 +368,19 @@ export const calculateCaptureProbability = ({
     return 1;
   }
 
-  const maximumHp = clamp(context.maxHp, 1, 9999);
-  const currentHp = clamp(context.currentHp, 1, maximumHp);
-  const hpFactor = (3 * maximumHp - 2 * currentHp) / (3 * maximumHp);
-  const ballModifier = getBallModifier(ball, context);
-  const statusModifier = getStatusModifier(context.status);
-  const adjustedCatchRate = getAdjustedCatchRate(captureRate, ball, context);
-  const modifiedRate = hpFactor * adjustedCatchRate * ballModifier * statusModifier;
-
-  if (modifiedRate >= 255) {
-    return 1;
+  if (getMechanicsId(context) === 'gen3-4') {
+    return calculateGenerationThreeOrFourProbability({
+      captureRate,
+      ball,
+      context,
+    });
   }
 
-  if (modifiedRate <= 0) {
-    return 0;
-  }
-
-  const shakeThreshold = 1048560 / Math.sqrt(Math.sqrt(16711680 / modifiedRate));
-  const singleShakeChance = clamp(shakeThreshold / 65536, 0, 1);
-  return clamp(singleShakeChance ** 4, 0, 1);
+  return calculateModernProbability({
+    captureRate,
+    ball,
+    context,
+  });
 };
 
 export const calculateBallRates = ({
