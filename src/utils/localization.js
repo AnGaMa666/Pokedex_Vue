@@ -38,11 +38,11 @@ const TARGET_LABELS = Object.freeze({
   de: {
     'specific-move': 'Bestimmte Attacke',
     'selected-pokemon-me-first': 'Ausgewähltes Pokémon',
-    'ally': 'Verbündetes Pokémon',
+    ally: 'Verbündetes Pokémon',
     'users-field': 'Eigenes Feld',
     'user-or-ally': 'Anwender oder Verbündeter',
     'opponents-field': 'Gegnerisches Feld',
-    'user': 'Anwender',
+    user: 'Anwender',
     'random-opponent': 'Zufälliger Gegner',
     'all-other-pokemon': 'Alle anderen Pokémon',
     'selected-pokemon': 'Ausgewähltes Pokémon',
@@ -52,6 +52,28 @@ const TARGET_LABELS = Object.freeze({
     'all-pokemon': 'Alle Pokémon',
     'all-allies': 'Alle Verbündeten',
     'fainting-pokemon': 'Besiegtes Pokémon',
+  },
+  en: {},
+});
+
+const BERRY_FIRMNESS_LABELS = Object.freeze({
+  de: {
+    'very-soft': 'Sehr weich',
+    soft: 'Weich',
+    hard: 'Hart',
+    'very-hard': 'Sehr hart',
+    'super-hard': 'Extrem hart',
+  },
+  en: {},
+});
+
+const BERRY_FLAVOR_LABELS = Object.freeze({
+  de: {
+    spicy: 'Scharf',
+    dry: 'Trocken',
+    sweet: 'Süß',
+    bitter: 'Bitter',
+    sour: 'Sauer',
   },
   en: {},
 });
@@ -101,6 +123,14 @@ export const getLocalizedMoveTargetName = (name = '', language = 'en') => {
   return getMappedLabel(TARGET_LABELS, name, language);
 };
 
+export const getLocalizedBerryFirmnessName = (name = '', language = 'en') => {
+  return getMappedLabel(BERRY_FIRMNESS_LABELS, name, language);
+};
+
+export const getLocalizedBerryFlavorName = (name = '', language = 'en') => {
+  return getMappedLabel(BERRY_FLAVOR_LABELS, name, language);
+};
+
 export const getLocalizedGenerationName = (name = '', language = 'en') => {
   const roman = GENERATION_ROMAN[name];
 
@@ -108,7 +138,7 @@ export const getLocalizedGenerationName = (name = '', language = 'en') => {
     return titleCase(name);
   }
 
-  return language === 'de' ? `Generation ${roman}` : `Generation ${roman}`;
+  return `Generation ${roman}`;
 };
 
 export const getTypeTextColor = (typeName = '') => {
