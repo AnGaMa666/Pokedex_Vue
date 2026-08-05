@@ -1,9 +1,6 @@
-name: Build and deploy Pokédex to STRATO
+name: Deploy Pokédex to STRATO
 
 on:
-  pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
@@ -17,9 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build production application
+  deploy:
+    name: Build and deploy production application
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
+
+    environment:
+      name: production
+      url: https://pokedex.byangama.de
 
     steps:
       - name: Check out repository
@@ -36,32 +38,6 @@ jobs:
 
       - name: Build application
         run: npm run build
-
-      - name: Upload production files
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v4
-        with:
-          name: pokedex-production-${{ github.sha }}
-          path: dist
-          if-no-files-found: error
-          retention-days: 1
-
-  deploy:
-    name: Deploy to STRATO webspace
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
-    needs: build
-    runs-on: ubuntu-latest
-
-    environment:
-      name: production
-      url: https://pokedex.byangama.de
-
-    steps:
-      - name: Download production files
-        uses: actions/download-artifact@v5
-        with:
-          name: pokedex-production-${{ github.sha }}
-          path: dist
 
       - name: Install SFTP client
         run: |
@@ -123,10 +99,10 @@ jobs:
 
       - name: Synchronize website through SFTP
         env:
+          LFTP_PASSWORD: ${{ secrets.STRATO_SFTP_PASSWORD }}
           STRATO_SFTP_HOST: ${{ secrets.STRATO_SFTP_HOST }}
           STRATO_SFTP_PORT: ${{ secrets.STRATO_SFTP_PORT }}
           STRATO_SFTP_USER: ${{ secrets.STRATO_SFTP_USER }}
-          STRATO_SFTP_PASSWORD: ${{ secrets.STRATO_SFTP_PASSWORD }}
           STRATO_SFTP_REMOTE_PATH: ${{ secrets.STRATO_SFTP_REMOTE_PATH }}
         run: |
           set -euo pipefail
@@ -138,7 +114,7 @@ jobs:
           set net:reconnect-interval-base 5
           set sftp:auto-confirm no
           set sftp:connect-program "ssh -a -x -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -p $STRATO_SFTP_PORT"
-          open -u "$STRATO_SFTP_USER","$STRATO_SFTP_PASSWORD" "sftp://$STRATO_SFTP_HOST"
+          open --env-password --user "$STRATO_SFTP_USER" "sftp://$STRATO_SFTP_HOST"
           mirror --reverse --delete --parallel=2 --verbose=1 dist/ "$STRATO_SFTP_REMOTE_PATH"
           bye
           LFTP_COMMANDS
