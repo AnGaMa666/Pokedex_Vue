@@ -1,5 +1,5 @@
 const RAW_DATA_BASE = 'https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv';
-const STORAGE_PREFIX = 'pokedex-vue:de-catalog:v1:';
+const STORAGE_PREFIX = 'pokedex-vue:de-catalog:v2:';
 const GERMAN_LANGUAGE_ID = '6';
 const MAX_CACHE_AGE = 30 * 24 * 60 * 60 * 1000;
 
@@ -50,45 +50,16 @@ const CATALOGS = Object.freeze({
 });
 
 const VERSION_NAMES_DE = Object.freeze({
-  red: 'Rot',
-  blue: 'Blau',
-  yellow: 'Gelb',
-  gold: 'Gold',
-  silver: 'Silber',
-  crystal: 'Kristall',
-  ruby: 'Rubin',
-  sapphire: 'Saphir',
-  emerald: 'Smaragd',
-  firered: 'Feuerrot',
-  leafgreen: 'Blattgrün',
-  diamond: 'Diamant',
-  pearl: 'Perl',
-  platinum: 'Platin',
-  heartgold: 'HeartGold',
-  soulsilver: 'SoulSilver',
-  black: 'Schwarz',
-  white: 'Weiß',
-  'black-2': 'Schwarz 2',
-  'white-2': 'Weiß 2',
-  x: 'X',
-  y: 'Y',
-  'omega-ruby': 'Omega Rubin',
-  'alpha-sapphire': 'Alpha Saphir',
-  sun: 'Sonne',
-  moon: 'Mond',
-  'ultra-sun': 'Ultrasonne',
-  'ultra-moon': 'Ultramond',
-  'lets-go-pikachu': 'Pokémon: Let’s Go, Pikachu!',
-  'lets-go-eevee': 'Pokémon: Let’s Go, Evoli!',
-  sword: 'Schwert',
-  shield: 'Schild',
-  'brilliant-diamond': 'Strahlender Diamant',
-  'shining-pearl': 'Leuchtende Perle',
-  'legends-arceus': 'Pokémon-Legenden: Arceus',
-  scarlet: 'Karmesin',
-  violet: 'Purpur',
-  colosseum: 'Pokémon Colosseum',
-  xd: 'Pokémon XD',
+  red: 'Rot', blue: 'Blau', yellow: 'Gelb', gold: 'Gold', silver: 'Silber', crystal: 'Kristall',
+  ruby: 'Rubin', sapphire: 'Saphir', emerald: 'Smaragd', firered: 'Feuerrot', leafgreen: 'Blattgrün',
+  diamond: 'Diamant', pearl: 'Perl', platinum: 'Platin', heartgold: 'HeartGold', soulsilver: 'SoulSilver',
+  black: 'Schwarz', white: 'Weiß', 'black-2': 'Schwarz 2', 'white-2': 'Weiß 2', x: 'X', y: 'Y',
+  'omega-ruby': 'Omega Rubin', 'alpha-sapphire': 'Alpha Saphir', sun: 'Sonne', moon: 'Mond',
+  'ultra-sun': 'Ultrasonne', 'ultra-moon': 'Ultramond',
+  'lets-go-pikachu': 'Pokémon: Let’s Go, Pikachu!', 'lets-go-eevee': 'Pokémon: Let’s Go, Evoli!',
+  sword: 'Schwert', shield: 'Schild', 'brilliant-diamond': 'Strahlender Diamant',
+  'shining-pearl': 'Leuchtende Perle', 'legends-arceus': 'Pokémon-Legenden: Arceus',
+  scarlet: 'Karmesin', violet: 'Purpur', colosseum: 'Pokémon Colosseum', xd: 'Pokémon XD',
 });
 
 const ENCOUNTER_METHOD_NAMES_DE = Object.freeze({
@@ -111,8 +82,8 @@ const ENCOUNTER_METHOD_NAMES_DE = Object.freeze({
   'rough-terrain': 'Unwegsames Gelände',
   gift: 'Geschenk',
   'gift-egg': 'Geschenk-Ei',
-  only-one: 'Einmalig',
-  'pokeflute': 'Pokéflöte',
+  'only-one': 'Einmalig',
+  pokeflute: 'Pokéflöte',
   'headbutt-low': 'Kopfnuss – seltene Bäume',
   'headbutt-normal': 'Kopfnuss – normale Bäume',
   'squirt-bottle': 'Schiggykanne',
@@ -127,34 +98,13 @@ const ENCOUNTER_METHOD_NAMES_DE = Object.freeze({
 });
 
 const FORM_SUFFIXES_DE = Object.freeze({
-  alola: 'Alola-Form',
-  galar: 'Galar-Form',
-  hisui: 'Hisui-Form',
-  paldea: 'Paldea-Form',
-  mega: 'Mega-Entwicklung',
-  'mega-x': 'Mega-Entwicklung X',
-  'mega-y': 'Mega-Entwicklung Y',
-  gmax: 'Gigadynamax-Form',
-  female: 'weibliche Form',
-  male: 'männliche Form',
-  origin: 'Urform',
-  altered: 'Wandelform',
-  attack: 'Angriffsform',
-  defense: 'Verteidigungsform',
-  speed: 'Initiativeform',
-  normal: 'Normalform',
-  therian: 'Tiergeistform',
-  incarnate: 'Inkarnationsform',
-  resolute: 'Resolutform',
-  ordinary: 'Standardform',
-  school: 'Schwarmform',
-  solo: 'Einzelform',
-  complete: 'Optimumform',
-  '10': '10%-Form',
-  '50': '50%-Form',
-  blade: 'Klingenform',
-  shield: 'Schildform',
-  zen: 'Trance-Modus',
+  alola: 'Alola-Form', galar: 'Galar-Form', hisui: 'Hisui-Form', paldea: 'Paldea-Form',
+  mega: 'Mega-Entwicklung', 'mega-x': 'Mega-Entwicklung X', 'mega-y': 'Mega-Entwicklung Y',
+  gmax: 'Gigadynamax-Form', female: 'weibliche Form', male: 'männliche Form', origin: 'Urform',
+  altered: 'Wandelform', attack: 'Angriffsform', defense: 'Verteidigungsform', speed: 'Initiativeform',
+  normal: 'Normalform', therian: 'Tiergeistform', incarnate: 'Inkarnationsform', resolute: 'Resolutform',
+  ordinary: 'Standardform', school: 'Schwarmform', solo: 'Einzelform', complete: 'Optimumform',
+  '10': '10%-Form', '50': '50%-Form', blade: 'Klingenform', shield: 'Schildform', zen: 'Trance-Modus',
 });
 
 const formatFallbackName = (name = '') => name
@@ -171,7 +121,6 @@ const parseCsv = (source) => {
 
   for (let index = 0; index < source.length; index += 1) {
     const character = source[index];
-
     if (quoted) {
       if (character === '"' && source[index + 1] === '"') {
         field += '"';
@@ -184,9 +133,8 @@ const parseCsv = (source) => {
       continue;
     }
 
-    if (character === '"') {
-      quoted = true;
-    } else if (character === ',') {
+    if (character === '"') quoted = true;
+    else if (character === ',') {
       row.push(field);
       field = '';
     } else if (character === '\n') {
@@ -194,36 +142,26 @@ const parseCsv = (source) => {
       rows.push(row);
       row = [];
       field = '';
-    } else {
-      field += character;
-    }
+    } else field += character;
   }
 
   if (field.length || row.length) {
     row.push(field.replace(/\r$/, ''));
     rows.push(row);
   }
-
   return rows;
 };
 
 const readStoredCatalog = (key) => {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return null;
-  }
-
+  if (typeof window === 'undefined' || !window.localStorage) return null;
   try {
     const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${key}`);
-    if (!raw) {
-      return null;
-    }
-
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed.savedAt || Date.now() - parsed.savedAt > MAX_CACHE_AGE) {
       window.localStorage.removeItem(`${STORAGE_PREFIX}${key}`);
       return null;
     }
-
     return new Map(parsed.entries || []);
   } catch {
     return null;
@@ -231,10 +169,7 @@ const readStoredCatalog = (key) => {
 };
 
 const storeCatalog = (key, catalog) => {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
-
+  if (typeof window === 'undefined' || !window.localStorage) return;
   try {
     window.localStorage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify({
       savedAt: Date.now(),
@@ -247,22 +182,14 @@ const storeCatalog = (key, catalog) => {
 
 const loadCatalogInternal = async (kind) => {
   const config = CATALOGS[kind];
-  if (!config) {
-    throw new Error(`Unknown localization catalog: ${kind}`);
-  }
-
+  if (!config) throw new Error(`Unknown localization catalog: ${kind}`);
   const stored = readStoredCatalog(kind);
-  if (stored) {
-    return stored;
-  }
+  if (stored) return stored;
 
   const response = await fetch(`${RAW_DATA_BASE}/${config.file}`, {
     headers: { Accept: 'text/csv,text/plain;q=0.9,*/*;q=0.8' },
   });
-
-  if (!response.ok) {
-    throw new Error(`Unable to load localization catalog ${kind}: ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Unable to load localization catalog ${kind}: ${response.status}`);
 
   const rows = parseCsv(await response.text());
   const headers = rows.shift() || [];
@@ -270,31 +197,15 @@ const loadCatalogInternal = async (kind) => {
   const catalog = new Map();
 
   for (const row of rows) {
-    if (!row.length) {
-      continue;
-    }
-
-    if (
-      config.languageField
-      && row[indexes[config.languageField]] !== GERMAN_LANGUAGE_ID
-    ) {
-      continue;
-    }
-
+    if (!row.length) continue;
+    if (config.languageField && row[indexes[config.languageField]] !== GERMAN_LANGUAGE_ID) continue;
     const id = Number(row[indexes[config.idField]]);
-    if (!Number.isFinite(id)) {
-      continue;
-    }
-
+    if (!Number.isFinite(id)) continue;
     const values = Object.fromEntries(config.valueFields.map((fieldName) => [
       fieldName,
       row[indexes[fieldName]] || '',
     ]));
-    const value = config.valueFields.length === 1
-      ? values[config.valueFields[0]]
-      : values;
-
-    catalog.set(id, value);
+    catalog.set(id, config.valueFields.length === 1 ? values[config.valueFields[0]] : values);
   }
 
   storeCatalog(kind, catalog);
@@ -308,20 +219,14 @@ export const loadGermanCatalog = (kind) => {
       throw error;
     }));
   }
-
   return catalogPromises.get(kind);
 };
 
 export const loadGermanPokemonCatalog = async () => {
   const cacheKey = 'pokemon-combined';
   const stored = readStoredCatalog(cacheKey);
-  if (stored) {
-    return stored;
-  }
-
-  if (catalogPromises.has(cacheKey)) {
-    return catalogPromises.get(cacheKey);
-  }
+  if (stored) return stored;
+  if (catalogPromises.has(cacheKey)) return catalogPromises.get(cacheKey);
 
   const request = Promise.all([
     loadGermanCatalog('species'),
@@ -329,11 +234,17 @@ export const loadGermanPokemonCatalog = async () => {
     loadGermanCatalog('pokemonIndex'),
   ]).then(([speciesNames, formNames, pokemonIndex]) => {
     const combined = new Map();
+    const defaultIdentifiersBySpecies = new Map();
+
+    for (const indexEntry of pokemonIndex.values()) {
+      if (String(indexEntry.is_default) === '1') {
+        defaultIdentifiersBySpecies.set(Number(indexEntry.species_id), indexEntry.identifier);
+      }
+    }
 
     for (const [pokemonId, indexEntry] of pokemonIndex.entries()) {
       const speciesId = Number(indexEntry.species_id) || pokemonId;
-      const speciesName = speciesNames.get(speciesId)
-        || formatFallbackName(indexEntry.identifier);
+      const speciesName = speciesNames.get(speciesId) || formatFallbackName(indexEntry.identifier);
       const formEntry = formNames.get(pokemonId);
       const explicitPokemonName = formEntry?.pokemon_name?.trim();
       const formName = formEntry?.form_name?.trim();
@@ -342,21 +253,18 @@ export const loadGermanPokemonCatalog = async () => {
         combined.set(pokemonId, explicitPokemonName);
         continue;
       }
-
       if (formName && formName.toLocaleLowerCase('de-DE') !== speciesName.toLocaleLowerCase('de-DE')) {
         combined.set(pokemonId, `${speciesName} – ${formName}`);
         continue;
       }
 
       const identifier = indexEntry.identifier || '';
-      const suffix = identifier.startsWith(`${identifier.split('-')[0]}-`)
-        ? identifier.split('-').slice(1).join('-')
+      const defaultIdentifier = defaultIdentifiersBySpecies.get(speciesId) || '';
+      const suffix = defaultIdentifier && identifier.startsWith(`${defaultIdentifier}-`)
+        ? identifier.slice(defaultIdentifier.length + 1)
         : '';
       const localizedSuffix = FORM_SUFFIXES_DE[suffix];
-      combined.set(
-        pokemonId,
-        localizedSuffix ? `${speciesName} – ${localizedSuffix}` : speciesName,
-      );
+      combined.set(pokemonId, localizedSuffix ? `${speciesName} – ${localizedSuffix}` : speciesName);
     }
 
     storeCatalog(cacheKey, combined);
@@ -367,24 +275,20 @@ export const loadGermanPokemonCatalog = async () => {
   return request;
 };
 
-export const getCatalogLabel = (catalog, id, fallback = '') => {
-  return catalog?.get(Number(id)) || formatFallbackName(fallback);
-};
+export const getCatalogLabel = (catalog, id, fallback = '') => (
+  catalog?.get(Number(id)) || formatFallbackName(fallback)
+);
 
-export const getLocalizedVersionName = (name = '', language = 'en') => {
-  return language === 'de'
-    ? VERSION_NAMES_DE[name] || formatFallbackName(name)
-    : formatFallbackName(name);
-};
+export const getLocalizedVersionName = (name = '', language = 'en') => (
+  language === 'de' ? VERSION_NAMES_DE[name] || formatFallbackName(name) : formatFallbackName(name)
+);
 
-export const getLocalizedEncounterMethodName = (name = '', language = 'en') => {
-  return language === 'de'
+export const getLocalizedEncounterMethodName = (name = '', language = 'en') => (
+  language === 'de'
     ? ENCOUNTER_METHOD_NAMES_DE[name] || formatFallbackName(name)
-    : formatFallbackName(name);
-};
+    : formatFallbackName(name)
+);
 
-export const getLocalizedFormSuffix = (name = '', language = 'en') => {
-  return language === 'de'
-    ? FORM_SUFFIXES_DE[name] || formatFallbackName(name)
-    : formatFallbackName(name);
-};
+export const getLocalizedFormSuffix = (name = '', language = 'en') => (
+  language === 'de' ? FORM_SUFFIXES_DE[name] || formatFallbackName(name) : formatFallbackName(name)
+);
