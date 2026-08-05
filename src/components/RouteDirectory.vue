@@ -17,7 +17,7 @@
           <select v-model="selectedRegion" :disabled="loadingRegions">
             <option value="">{{ labels.allRegions }}</option>
             <option v-for="region in regions" :key="region.name" :value="region.name">
-              {{ formatName(region.name) }}
+              {{ getRegionLabel(region.name) }}
             </option>
           </select>
         </label>
@@ -49,17 +49,24 @@
               @click="selectLocation(location)"
             >
               <span class="route-number">#{{ formatResourceId(location.id) }}</span>
-              <strong>{{ formatName(location.name) }}</strong>
+              <strong>{{ getLocationLabel(location) }}</strong>
               <span aria-hidden="true">›</span>
             </button>
           </li>
         </ul>
 
-        <nav v-if="pageCount > 1" class="pagination">
+        <nav v-if="pageCount > 1" class="pagination" :aria-label="labels.pages">
           <button type="button" :disabled="page === 1" @click="page -= 1">
             {{ labels.previous }}
           </button>
-          <span>{{ labels.page }} {{ page }} / {{ pageCount }}</span>
+          <label>
+            <span class="visually-hidden">{{ labels.page }}</span>
+            <select v-model.number="page">
+              <option v-for="pageNumber in pageCount" :key="pageNumber" :value="pageNumber">
+                {{ labels.page }} {{ pageNumber }} / {{ pageCount }}
+              </option>
+            </select>
+          </label>
           <button type="button" :disabled="page === pageCount" @click="page += 1">
             {{ labels.next }}
           </button>
@@ -90,12 +97,12 @@
           <div>
             <p>#{{ formatResourceId(locationDetails.id) }}</p>
             <h2>{{ localizedLocationName }}</h2>
-            <span>{{ labels.region }}: {{ formatName(locationDetails.region?.name || labels.unknown) }}</span>
+            <span>{{ labels.region }}: {{ getRegionLabel(locationDetails.region?.name || '') }}</span>
           </div>
-          <div class="location-indexes">
+          <div v-if="locationDetails.game_indices?.length" class="location-indexes">
             <strong>{{ labels.gameIndexes }}</strong>
-            <span v-for="index in locationDetails.game_indices || []" :key="`${index.generation.name}-${index.game_index}`">
-              {{ formatName(index.generation.name) }} · {{ index.game_index }}
+            <span v-for="index in locationDetails.game_indices" :key="`${index.generation.name}-${index.game_index}`">
+              {{ getLocalizedGenerationName(index.generation.name, language) }} · {{ index.game_index }}
             </span>
           </div>
         </header>
@@ -119,7 +126,7 @@
             <select v-model="selectedVersion">
               <option value="">{{ labels.allGames }}</option>
               <option v-for="version in availableVersions" :key="version" :value="version">
-                {{ formatName(version) }}
+                {{ getLocalizedVersionName(version, language) }}
               </option>
             </select>
           </label>
@@ -141,23 +148,34 @@
             </p>
 
             <div v-else class="encounter-grid">
-              <article v-for="encounter in area.encounters" :key="`${area.id}-${encounter.name}`" class="encounter-card">
-                <img
-                  :src="getEncounterSprite(encounter)"
-                  :alt="`${formatName(encounter.name)} sprite`"
-                  width="78"
-                  height="78"
-                  loading="lazy"
-                >
-                <div class="encounter-copy">
-                  <strong>{{ formatName(encounter.name) }}</strong>
-                  <span v-for="detail in encounter.details" :key="`${detail.version}-${detail.method}-${detail.minLevel}-${detail.maxLevel}`">
-                    <b>{{ formatName(detail.version) }}</b>
-                    · {{ formatEncounterMethod(detail.method) }}
-                    · {{ labels.levelShort }} {{ detail.minLevel }}–{{ detail.maxLevel }}
-                    · {{ detail.chance }}%
-                  </span>
+              <article
+                v-for="encounter in area.encounters"
+                :key="`${area.id}-${encounter.name}`"
+                class="encounter-card"
+              >
+                <div class="encounter-pokemon">
+                  <img
+                    :src="getEncounterSprite(encounter)"
+                    :alt="getEncounterName(encounter)"
+                    width="78"
+                    height="78"
+                    loading="lazy"
+                    decoding="async"
+                  >
+                  <strong>{{ getEncounterName(encounter) }}</strong>
+                  <small>#{{ formatResourceId(encounter.id) }}</small>
                 </div>
+                <ul class="encounter-details">
+                  <li
+                    v-for="detail in encounter.details"
+                    :key="`${detail.version}-${detail.method}-${detail.minLevel}-${detail.maxLevel}-${detail.chance}`"
+                  >
+                    <b>{{ getLocalizedVersionName(detail.version, language) }}</b>
+                    <span>{{ getLocalizedEncounterMethodName(detail.method, language) }}</span>
+                    <span>{{ labels.levelShort }} {{ detail.minLevel }}–{{ detail.maxLevel }}</span>
+                    <strong>{{ detail.chance }} %</strong>
+                  </li>
+                </ul>
               </article>
             </div>
           </article>
@@ -180,6 +198,14 @@ import {
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
+  getCatalogLabel,
+  getLocalizedEncounterMethodName,
+  getLocalizedVersionName,
+  loadGermanCatalog,
+  loadGermanPokemonCatalog,
+} from '@/services/localizationCatalog';
+import { getLocalizedGenerationName } from '@/utils/localization';
+import {
   formatResourceId,
   getLocalizedName,
   getResourceId,
@@ -193,11 +219,25 @@ const props = defineProps({
 });
 
 const { language } = useI18n();
-const PAGE_SIZE = 60;
+const PAGE_SIZE = 40;
 const MAX_PARALLEL_REQUESTS = 6;
+const REGION_NAMES_DE = Object.freeze({
+  kanto: 'Kanto',
+  johto: 'Johto',
+  hoenn: 'Hoenn',
+  sinnoh: 'Sinnoh',
+  unova: 'Einall',
+  kalos: 'Kalos',
+  alola: 'Alola',
+  galar: 'Galar',
+  hisui: 'Hisui',
+  paldea: 'Paldea',
+});
 
 const locations = ref([]);
 const regions = ref([]);
+const locationCatalog = ref(new Map());
+const pokemonCatalog = ref(new Map());
 const allowedLocationNames = ref(null);
 const selectedRegion = ref('');
 const sortMode = ref('name');
@@ -219,7 +259,7 @@ const labels = computed(() => language.value === 'de'
   ? {
       kicker: 'Spielwelt',
       title: 'Routen & Orte',
-      description: 'Orte werden nach Region gefiltert. Die Detailansicht ordnet verfügbare Begegnungen nach Spielversion, Gebiet, Methode, Level und Chance.',
+      description: 'Orte, Pokémon, Spielversionen und Begegnungsmethoden werden auf Deutsch angezeigt. Filtere nach Region und öffne einen Ort für alle verfügbaren Begegnungsdaten.',
       region: 'Region',
       allRegions: 'Alle Regionen',
       sort: 'Sortierung',
@@ -232,6 +272,7 @@ const labels = computed(() => language.value === 'de'
       previous: 'Zurück',
       next: 'Weiter',
       page: 'Seite',
+      pages: 'Routenseiten',
       chooseTitle: 'Route oder Ort auswählen',
       chooseText: 'Wähle links einen Eintrag, um Gebiete und wilde Begegnungen nach Spiel zu sehen.',
       detailLoading: 'Routen- und Begegnungsdaten werden geladen…',
@@ -239,7 +280,7 @@ const labels = computed(() => language.value === 'de'
       gameIndexes: 'Spielindizes',
       dataAvailability: 'Verfügbare Routendaten',
       dataAvailabilityText: 'PokéAPI stellt Orte, Untergebiete und wilde Begegnungen bereit. Trainer, Trainer-Sprites, auf der Karte liegende Items und Kartenbilder sind nicht mit den Routen verknüpft und werden deshalb nicht erfunden.',
-      encountersAvailable: 'Wilde Pokémon und Chancen',
+      encountersAvailable: 'Wilde Pokémon und Fangchancen',
       levelsAvailable: 'Levelbereiche nach Spiel',
       methodsAvailable: 'Begegnungsmethoden',
       trainersUnavailable: 'Trainer und Trainer-Sprites nicht verfügbar',
@@ -253,11 +294,12 @@ const labels = computed(() => language.value === 'de'
       noEncountersForGame: 'In der gewählten Spielversion sind für dieses Gebiet keine Begegnungen hinterlegt.',
       levelShort: 'Lv.',
       noAreaData: 'Für diesen Ort sind keine Untergebiete mit Begegnungsdaten hinterlegt.',
+      detailLoadError: 'Die Routendetails konnten nicht geladen werden.',
     }
   : {
       kicker: 'Game world',
       title: 'Routes & locations',
-      description: 'Locations can be filtered by region. Details group available encounters by game, area, method, level and chance.',
+      description: 'Filter locations by region and inspect every available encounter grouped by game, area, method and level.',
       region: 'Region',
       allRegions: 'All regions',
       sort: 'Sort',
@@ -270,6 +312,7 @@ const labels = computed(() => language.value === 'de'
       previous: 'Previous',
       next: 'Next',
       page: 'Page',
+      pages: 'Route pages',
       chooseTitle: 'Choose a route or location',
       chooseText: 'Select an entry to inspect areas and wild encounters by game.',
       detailLoading: 'Loading route and encounter data…',
@@ -291,6 +334,7 @@ const labels = computed(() => language.value === 'de'
       noEncountersForGame: 'No encounters are listed for this area in the selected game.',
       levelShort: 'Lv.',
       noAreaData: 'No sub-areas with encounter data are listed for this location.',
+      detailLoadError: 'The route details could not be loaded.',
     });
 
 const formatName = (name = '') => name
@@ -298,13 +342,23 @@ const formatName = (name = '') => name
   .filter(Boolean)
   .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
   .join(' ');
+const getRegionLabel = (name = '') => language.value === 'de'
+  ? REGION_NAMES_DE[name] || formatName(name || labels.value.unknown)
+  : formatName(name || labels.value.unknown);
+const getLocationLabel = (location) => language.value === 'de'
+  ? getCatalogLabel(locationCatalog.value, location.id, location.name)
+  : formatName(location.name);
+const getEncounterName = (encounter) => language.value === 'de'
+  ? getCatalogLabel(pokemonCatalog.value, encounter.id, encounter.name)
+  : formatName(encounter.name);
 
 const filteredLocations = computed(() => {
   const query = props.searchQuery.trim().toLocaleLowerCase(language.value);
   let entries = locations.value.filter((location) => {
+    const localizedName = getLocationLabel(location).toLocaleLowerCase(language.value);
     const matchesSearch = !query
       || location.name.includes(query)
-      || formatName(location.name).toLocaleLowerCase(language.value).includes(query)
+      || localizedName.includes(query)
       || String(location.id).includes(query);
     const matchesRegion = !selectedRegion.value
       || allowedLocationNames.value?.has(location.name);
@@ -312,16 +366,12 @@ const filteredLocations = computed(() => {
   });
 
   entries = [...entries].sort((firstLocation, secondLocation) => {
-    if (sortMode.value === 'number') {
-      return firstLocation.id - secondLocation.id;
-    }
-
-    return formatName(firstLocation.name).localeCompare(
-      formatName(secondLocation.name),
+    if (sortMode.value === 'number') return firstLocation.id - secondLocation.id;
+    return getLocationLabel(firstLocation).localeCompare(
+      getLocationLabel(secondLocation),
       language.value,
     );
   });
-
   return entries;
 });
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredLocations.value.length / PAGE_SIZE)));
@@ -329,36 +379,44 @@ const pagedLocations = computed(() => {
   const start = (page.value - 1) * PAGE_SIZE;
   return filteredLocations.value.slice(start, start + PAGE_SIZE);
 });
-const localizedLocationName = computed(() => getLocalizedName(
-  locationDetails.value?.names,
-  locationDetails.value?.name,
-  language.value,
-));
+const localizedLocationName = computed(() => {
+  if (!locationDetails.value) return '';
+  const apiName = getLocalizedName(
+    locationDetails.value.names,
+    locationDetails.value.name,
+    language.value,
+  );
+  if (language.value !== 'de') return apiName;
+  return getCatalogLabel(locationCatalog.value, locationDetails.value.id, apiName);
+});
 const availableVersions = computed(() => [...new Set(
-  locationAreas.value.flatMap((area) => {
-    return (area.pokemon_encounters || []).flatMap((encounter) => {
-      return (encounter.version_details || []).map((detail) => detail.version?.name).filter(Boolean);
-    });
-  }),
-)].sort((firstVersion, secondVersion) => firstVersion.localeCompare(secondVersion)));
+  locationAreas.value.flatMap((area) => (area.pokemon_encounters || []).flatMap((encounter) => (
+    (encounter.version_details || []).map((detail) => detail.version?.name).filter(Boolean)
+  ))),
+)].sort((firstVersion, secondVersion) => (
+  getLocalizedVersionName(firstVersion, language.value).localeCompare(
+    getLocalizedVersionName(secondVersion, language.value),
+    language.value,
+  )
+)));
 
 const areaRows = computed(() => locationAreas.value.map((area) => {
   const encounters = (area.pokemon_encounters || [])
     .map((encounter) => {
       const details = (encounter.version_details || [])
-        .filter((versionDetail) => {
-          return !selectedVersion.value || versionDetail.version?.name === selectedVersion.value;
-        })
-        .flatMap((versionDetail) => {
-          return (versionDetail.encounter_details || []).map((detail) => ({
-            version: versionDetail.version?.name || '',
-            chance: detail.chance ?? versionDetail.max_chance ?? 0,
-            minLevel: detail.min_level ?? 0,
-            maxLevel: detail.max_level ?? 0,
-            method: detail.method?.name || '',
-          }));
-        });
-
+        .filter((versionDetail) => !selectedVersion.value || versionDetail.version?.name === selectedVersion.value)
+        .flatMap((versionDetail) => (versionDetail.encounter_details || []).map((detail) => ({
+          version: versionDetail.version?.name || '',
+          chance: detail.chance ?? versionDetail.max_chance ?? 0,
+          minLevel: detail.min_level ?? 0,
+          maxLevel: detail.max_level ?? 0,
+          method: detail.method?.name || '',
+        })))
+        .sort((first, second) => (
+          first.version.localeCompare(second.version)
+          || first.method.localeCompare(second.method)
+          || first.minLevel - second.minLevel
+        ));
       return {
         name: encounter.pokemon?.name || '',
         id: getResourceId(encounter.pokemon?.url),
@@ -366,8 +424,9 @@ const areaRows = computed(() => locationAreas.value.map((area) => {
       };
     })
     .filter((encounter) => encounter.details.length > 0)
-    .sort((firstEncounter, secondEncounter) => firstEncounter.name.localeCompare(secondEncounter.name));
-
+    .sort((firstEncounter, secondEncounter) => (
+      getEncounterName(firstEncounter).localeCompare(getEncounterName(secondEncounter), language.value)
+    ));
   return {
     id: area.id,
     gameIndex: area.game_index,
@@ -375,42 +434,34 @@ const areaRows = computed(() => locationAreas.value.map((area) => {
     encounters,
   };
 }));
-const filteredEncounterCount = computed(() => areaRows.value.reduce((total, area) => {
-  return total + area.encounters.length;
-}, 0));
+const filteredEncounterCount = computed(() => areaRows.value.reduce(
+  (total, area) => total + area.encounters.length,
+  0,
+));
 
-const getEncounterSprite = (encounter) => {
-  return encounter.id
-    ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${encounter.id}.png`
-    : '';
-};
-const formatEncounterMethod = (method) => {
-  const germanMethods = {
-    walk: 'Laufen',
-    'old-rod': 'Angel',
-    'good-rod': 'Profiangel',
-    'super-rod': 'Superangel',
-    surf: 'Surfen',
-    'rock-smash': 'Zertrümmerer',
-    'headbutt': 'Kopfnuss',
-    'dark-grass': 'Dunkles Gras',
-    'grass-spots': 'Raschelndes Gras',
-    'cave-spots': 'Staubwolke',
-    'bridge-spots': 'Brückenschatten',
-    'super-rod-spots': 'Angelstelle',
-  };
-  return language.value === 'de' ? germanMethods[method] || formatName(method) : formatName(method);
+const getEncounterSprite = (encounter) => encounter.id
+  ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${encounter.id}.png`
+  : '';
+
+const loadCatalogs = async () => {
+  if (language.value !== 'de') return;
+  const results = await Promise.allSettled([
+    loadGermanCatalog('locations'),
+    loadGermanPokemonCatalog(),
+  ]);
+  if (results[0].status === 'fulfilled') locationCatalog.value = results[0].value;
+  if (results[1].status === 'fulfilled') pokemonCatalog.value = results[1].value;
 };
 
 const loadLocations = async () => {
   loading.value = true;
   hasError.value = false;
-
   try {
     const response = await PokeAPI.getLocations();
     locations.value = response.data.results
       .map((location) => ({ ...location, id: getResourceId(location.url) }))
       .filter((location) => location.id !== null);
+    await loadCatalogs();
   } catch (requestError) {
     console.error('Failed to load locations:', requestError);
     hasError.value = true;
@@ -421,7 +472,6 @@ const loadLocations = async () => {
 
 const loadRegions = async () => {
   loadingRegions.value = true;
-
   try {
     const response = await PokeAPI.getRegions();
     regions.value = response.data.results;
@@ -436,18 +486,10 @@ const loadRegion = async () => {
   const requestId = ++activeRegionRequestId;
   allowedLocationNames.value = null;
   page.value = 1;
-
-  if (!selectedRegion.value) {
-    return;
-  }
-
+  if (!selectedRegion.value) return;
   try {
     const response = await PokeAPI.getRegionDetails(selectedRegion.value);
-
-    if (requestId !== activeRegionRequestId) {
-      return;
-    }
-
+    if (requestId !== activeRegionRequestId) return;
     allowedLocationNames.value = new Set((response.data.locations || []).map((location) => location.name));
   } catch (requestError) {
     console.error('Failed to load route region:', requestError);
@@ -460,7 +502,6 @@ const selectLocation = async (location) => {
   selectedVersion.value = '';
   await loadLocationDetails();
   await nextTick();
-
   if (window.matchMedia('(max-width: 760px)').matches) {
     detailPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     detailPanel.value?.focus({ preventScroll: true });
@@ -473,18 +514,15 @@ const loadLocationDetails = async () => {
   detailError.value = '';
   locationDetails.value = null;
   locationAreas.value = [];
-
   try {
     const locationResponse = await PokeAPI.getLocationDetails(selectedLocation.value.name);
     const areas = locationResponse.data.areas || [];
     const results = new Array(areas.length);
     let nextIndex = 0;
-
     const worker = async () => {
       while (nextIndex < areas.length) {
         const index = nextIndex;
         nextIndex += 1;
-
         try {
           const response = await PokeAPI.getLocationAreaDetails(areas[index].name);
           results[index] = response.data;
@@ -493,463 +531,90 @@ const loadLocationDetails = async () => {
         }
       }
     };
-
     await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_REQUESTS, areas.length) }, worker));
-
-    if (requestId !== activeDetailRequestId) {
-      return;
-    }
-
+    if (requestId !== activeDetailRequestId) return;
     locationDetails.value = locationResponse.data;
     locationAreas.value = results.filter(Boolean);
+    await loadCatalogs();
   } catch (requestError) {
-    if (requestId !== activeDetailRequestId) {
-      return;
-    }
-
+    if (requestId !== activeDetailRequestId) return;
     console.error('Failed to load location details:', requestError);
-    detailError.value = language.value === 'de'
-      ? 'Die Routendetails konnten nicht geladen werden.'
-      : 'The route details could not be loaded.';
+    detailError.value = labels.value.detailLoadError;
   } finally {
-    if (requestId === activeDetailRequestId) {
-      detailLoading.value = false;
-    }
+    if (requestId === activeDetailRequestId) detailLoading.value = false;
   }
 };
 
 watch(selectedRegion, loadRegion);
-watch([sortMode, () => props.searchQuery], () => {
-  page.value = 1;
-});
-watch(pageCount, (count) => {
-  if (page.value > count) {
-    page.value = count;
-  }
-});
+watch([sortMode, () => props.searchQuery], () => { page.value = 1; });
+watch(pageCount, (count) => { if (page.value > count) page.value = count; });
+watch(language, () => { void loadCatalogs(); });
 
-onMounted(() => {
-  void Promise.all([loadLocations(), loadRegions()]);
-});
+onMounted(() => { void Promise.all([loadLocations(), loadRegions()]); });
 </script>
 
 <style scoped>
-.route-layout {
-  display: grid;
-  grid-template-columns: minmax(330px, 430px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.route-directory {
-  position: sticky;
-  top: 86px;
-  max-height: calc(100vh - 104px);
-  overflow: hidden;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-  box-shadow: 0 2px 5px var(--legacy-shadow);
-}
-
-.route-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  padding: 16px 14px 10px;
-  background: var(--legacy-page);
-}
-
-.route-heading p {
-  margin: 0 0 4px;
-  color: var(--legacy-muted);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.route-heading h1 {
-  margin: 0;
-  font-size: 1.35rem;
-}
-
-.route-heading > span {
-  color: var(--legacy-muted);
-  font-size: 0.72rem;
-}
-
-.route-description {
-  margin: 0;
-  padding: 0 14px 12px;
-  border-bottom: 1px solid var(--legacy-border);
-  color: var(--legacy-muted);
-  font-size: 0.76rem;
-  line-height: 1.5;
-  background: var(--legacy-page);
-}
-
-.route-filters {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  padding: 9px;
-  border-bottom: 1px solid var(--legacy-border);
-}
-
-.route-filters label,
-.game-filter-section label {
-  display: grid;
-  gap: 3px;
-  color: var(--legacy-muted);
-  font-size: 0.64rem;
-  font-weight: 850;
-}
-
-.route-filters select,
-.game-filter-section select {
-  min-height: 34px;
-  padding: 5px 7px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-page);
-}
-
-.status-message,
-.error-message,
-.detail-status {
-  margin: 0;
-  padding: 20px 14px;
-  color: var(--legacy-muted);
-}
-
-.error-message {
-  color: #b91c1c;
-}
-
-.error-message button {
-  margin-top: 7px;
-  padding: 7px 10px;
-  border: 1px solid #b91c1c;
-  color: #b91c1c;
-  background: var(--legacy-page);
-}
-
-.route-list {
-  max-height: calc(100vh - 300px);
-  padding: 6px;
-  margin: 0;
-  overflow-y: auto;
-  list-style: none;
-}
-
-.route-button {
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  width: 100%;
-  min-height: 46px;
-  padding: 6px 9px;
-  border: 1px solid transparent;
-  color: var(--legacy-text);
-  text-align: left;
-  background: transparent;
-}
-
-.route-button:hover,
-.route-button.selected {
-  border-color: var(--legacy-border-strong);
-  background: var(--legacy-surface-active);
-}
-
-.route-button.selected {
-  box-shadow: inset 4px 0 0 #888888;
-}
-
-.route-number {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-}
-
-.route-button strong {
-  overflow: hidden;
-  font-size: 0.82rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pagination {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px;
-  align-items: center;
-  padding: 8px;
-  border-top: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.pagination button {
-  min-height: 32px;
-  padding: 5px 9px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-surface);
-}
-
-.pagination span {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-  text-align: center;
-}
-
-.route-detail {
-  min-width: 0;
-  outline: none;
-}
-
-.empty-detail {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  min-height: 320px;
-  padding: 30px;
-  border: 1px dashed var(--legacy-border-strong);
-  color: var(--legacy-muted);
-  background: var(--legacy-surface);
-}
-
-.empty-detail > span {
-  display: grid;
-  width: 70px;
-  height: 70px;
-  place-items: center;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  font-size: 1.7rem;
-  background: var(--legacy-page);
-}
-
-.empty-detail h2 {
-  margin: 0;
-  color: var(--legacy-text);
-}
-
-.empty-detail p {
-  margin: 7px 0 0;
-}
-
-.location-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  padding: 22px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-}
-
-.location-header p {
-  margin: 0 0 5px;
-  color: var(--legacy-muted);
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.location-header h2 {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: clamp(2rem, 4vw, 3.5rem);
-}
-
-.location-header > div > span {
-  display: block;
-  margin-top: 8px;
-  color: var(--legacy-muted);
-}
-
-.location-indexes {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  min-width: 180px;
-  padding: 12px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.location-indexes span {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-}
-
-.availability-note {
-  margin-top: 12px;
-  padding: 16px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.availability-note h3 {
-  margin: 0;
-}
-
-.availability-note p {
-  margin: 7px 0 0;
-  color: var(--legacy-muted);
-  line-height: 1.5;
-}
-
-.availability-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 12px;
-}
-
-.availability-grid span {
-  padding: 8px;
-  border: 1px solid var(--legacy-border);
-  font-size: 0.72rem;
-}
-
-.game-filter-section {
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  align-items: end;
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-}
-
-.game-filter-section label {
-  min-width: min(100%, 260px);
-}
-
-.game-filter-section > span {
-  color: var(--legacy-muted);
-  font-size: 0.75rem;
-}
-
-.areas-section {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.area-card {
-  padding: 14px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-}
-
-.area-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-}
-
-.area-heading p {
-  margin: 0 0 4px;
-  color: var(--legacy-muted);
-  font-size: 0.65rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.area-heading h3 {
-  margin: 0;
-}
-
-.area-heading > span {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-}
-
-.area-empty {
-  color: var(--legacy-muted);
-}
-
-.encounter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.encounter-card {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: 9px;
-  align-items: center;
-  min-width: 0;
-  padding: 9px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.encounter-card img {
-  width: 78px;
-  height: 78px;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-
-.encounter-copy {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-
-.encounter-copy span {
-  color: var(--legacy-muted);
-  font-size: 0.66rem;
-  line-height: 1.35;
-}
-
-@media (max-width: 900px) {
-  .route-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .route-directory {
-    position: static;
-    max-height: none;
-  }
-
-  .route-list {
-    max-height: 440px;
-  }
-}
-
-@media (max-width: 760px) {
-  .location-header {
-    grid-template-columns: 1fr;
-    padding: 16px;
-  }
-
-  .location-indexes {
-    min-width: 0;
-  }
-
-  .availability-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 460px) {
-  .route-filters {
-    grid-template-columns: 1fr;
-  }
-
-  .empty-detail {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .game-filter-section {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}
+.route-layout { display: grid; grid-template-columns: minmax(330px, 430px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.route-directory { position: sticky; top: 86px; max-height: calc(100vh - 104px); overflow: hidden; border: 1px solid var(--legacy-border); background: var(--legacy-surface); box-shadow: 0 2px 5px var(--legacy-shadow); }
+.route-heading { display: flex; justify-content: space-between; align-items: end; padding: 16px 14px 10px; background: var(--legacy-page); }
+.route-heading p { margin: 0 0 4px; color: var(--legacy-muted); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+.route-heading h1 { margin: 0; font-size: 1.35rem; }
+.route-heading > span { color: var(--legacy-muted); font-size: 0.72rem; }
+.route-description { margin: 0; padding: 0 14px 12px; border-bottom: 1px solid var(--legacy-border); color: var(--legacy-muted); font-size: 0.76rem; line-height: 1.5; background: var(--legacy-page); }
+.route-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 9px; border-bottom: 1px solid var(--legacy-border); }
+.route-filters label, .game-filter-section label { display: grid; gap: 3px; color: var(--legacy-muted); font-size: 0.64rem; font-weight: 850; }
+.route-filters select, .game-filter-section select, .pagination select { min-height: 34px; padding: 5px 7px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); }
+.status-message, .error-message, .detail-status { margin: 0; padding: 20px 14px; color: var(--legacy-muted); }
+.error-message { color: #b91c1c; }
+.error-message button { margin-top: 7px; padding: 7px 10px; border: 1px solid #b91c1c; color: #b91c1c; background: var(--legacy-page); }
+.route-list { max-height: calc(100vh - 315px); padding: 6px; margin: 0; overflow-y: auto; list-style: none; }
+.route-button { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; min-height: 46px; padding: 6px 9px; border: 1px solid transparent; color: var(--legacy-text); text-align: left; background: transparent; }
+.route-button:hover, .route-button.selected { border-color: var(--legacy-border-strong); background: var(--legacy-surface-active); }
+.route-button.selected { box-shadow: inset 4px 0 0 #888888; }
+.route-number { color: var(--legacy-muted); font-size: 0.7rem; }
+.route-button strong { overflow: hidden; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.pagination { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px; border-top: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.pagination button { min-height: 34px; padding: 5px 9px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-surface); }
+.pagination select { width: 100%; }
+.route-detail { min-width: 0; outline: none; }
+.empty-detail { display: flex; gap: 18px; align-items: center; min-height: 320px; padding: 30px; border: 1px dashed var(--legacy-border-strong); color: var(--legacy-muted); background: var(--legacy-surface); }
+.empty-detail > span { display: grid; width: 70px; height: 70px; place-items: center; border: 1px solid var(--legacy-border); color: var(--legacy-text); font-size: 1.7rem; background: var(--legacy-page); }
+.empty-detail h2 { margin: 0; color: var(--legacy-text); }
+.empty-detail p { margin: 7px 0 0; }
+.location-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; padding: 22px; border: 1px solid var(--legacy-border); background: var(--legacy-surface); }
+.location-header p { margin: 0 0 5px; color: var(--legacy-muted); font-weight: 900; letter-spacing: 0.08em; }
+.location-header h2 { margin: 0; overflow-wrap: anywhere; font-size: clamp(2rem, 4vw, 3.5rem); }
+.location-header > div > span { display: block; margin-top: 8px; color: var(--legacy-muted); }
+.location-indexes { display: grid; align-content: start; gap: 4px; min-width: 180px; padding: 10px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.location-indexes strong { margin-bottom: 3px; font-size: 0.7rem; text-transform: uppercase; }
+.location-indexes span { color: var(--legacy-muted); font-size: 0.7rem; }
+.availability-note, .game-filter-section, .area-card { margin-top: 12px; border: 1px solid var(--legacy-border); background: var(--legacy-surface); }
+.availability-note { padding: 14px; }
+.availability-note h3 { margin: 0; }
+.availability-note p { margin: 7px 0 0; color: var(--legacy-muted); line-height: 1.5; }
+.availability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 12px; }
+.availability-grid span { padding: 8px; border: 1px solid var(--legacy-border); color: var(--legacy-muted); font-size: 0.7rem; background: var(--legacy-page); }
+.game-filter-section { display: flex; gap: 14px; justify-content: space-between; align-items: end; padding: 12px; }
+.game-filter-section label { min-width: min(300px, 100%); }
+.game-filter-section > span { color: var(--legacy-muted); font-size: 0.72rem; }
+.area-card { padding: 14px; }
+.area-heading { display: flex; gap: 12px; justify-content: space-between; align-items: end; }
+.area-heading p { margin: 0 0 3px; color: var(--legacy-muted); font-size: 0.65rem; font-weight: 900; text-transform: uppercase; }
+.area-heading h3 { margin: 0; }
+.area-heading > span { color: var(--legacy-muted); font-size: 0.72rem; }
+.area-empty { color: var(--legacy-muted); }
+.encounter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 8px; margin-top: 12px; }
+.encounter-card { display: grid; grid-template-columns: 100px minmax(0, 1fr); min-width: 0; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.encounter-pokemon { display: grid; justify-items: center; align-content: center; gap: 2px; padding: 8px; border-right: 1px solid var(--legacy-border); text-align: center; }
+.encounter-pokemon img { width: 78px; height: 78px; object-fit: contain; image-rendering: pixelated; }
+.encounter-pokemon strong { max-width: 100%; overflow: hidden; font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
+.encounter-pokemon small { color: var(--legacy-muted); font-size: 0.6rem; }
+.encounter-details { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+.encounter-details li { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(110px, 1fr) auto auto; gap: 7px; align-items: center; padding: 7px 9px; border-bottom: 1px solid var(--legacy-border); font-size: 0.68rem; }
+.encounter-details li:last-child { border-bottom: 0; }
+.encounter-details span { color: var(--legacy-muted); }
+.encounter-details strong { text-align: right; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 1000px) { .route-layout { grid-template-columns: 1fr; } .route-directory { position: static; max-height: none; } .route-list { max-height: 520px; } }
+@media (max-width: 700px) { .location-header { grid-template-columns: 1fr; } .availability-grid { grid-template-columns: 1fr; } .game-filter-section { align-items: stretch; flex-direction: column; } .encounter-grid { grid-template-columns: 1fr; } .encounter-card { grid-template-columns: 86px minmax(0, 1fr); } .encounter-details li { grid-template-columns: 1fr auto; } .encounter-details li span { grid-column: 1 / -1; } }
 </style>

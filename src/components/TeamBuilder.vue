@@ -34,7 +34,16 @@
       </article>
 
       <article class="export-card">
-        <h2>{{ labels.export }}</h2>
+        <div class="export-heading">
+          <h2>{{ labels.export }}</h2>
+          <label>
+            <span>{{ labels.exportFormat }}</span>
+            <select v-model="exportMode">
+              <option value="summary">{{ labels.readableSummary }}</option>
+              <option value="showdown">Pokémon Showdown</option>
+            </select>
+          </label>
+        </div>
         <textarea :value="teamExport" readonly rows="8" :aria-label="labels.export"></textarea>
       </article>
     </section>
@@ -44,23 +53,29 @@
         v-for="(slot, slotIndex) in teamSlots"
         :key="slot.slotId"
         class="team-slot"
-        :class="{ filled: slot.details }"
+        :class="{ filled: slot.details, expanded: slot.expanded }"
       >
         <header class="slot-header">
           <div class="slot-identity">
-            <div class="slot-sprite">
+            <button
+              type="button"
+              class="slot-sprite"
+              :aria-label="labels.choosePokemon"
+              @click="openPicker('pokemon', slotIndex)"
+            >
               <img
                 v-if="slot.details"
                 :src="getPokemonSprite(slot.details, spriteMode, isShiny)"
-                :alt="`${formatName(slot.speciesName)} sprite`"
+                :alt="getSlotPokemonName(slot)"
                 width="88"
                 height="88"
+                decoding="async"
               >
               <span v-else aria-hidden="true">{{ slotIndex + 1 }}</span>
-            </div>
-            <div>
+            </button>
+            <div class="slot-title">
               <p>{{ labels.slot }} {{ slotIndex + 1 }}</p>
-              <h2>{{ slot.details ? formatName(slot.speciesName) : labels.emptySlot }}</h2>
+              <h2>{{ slot.details ? getSlotPokemonName(slot) : labels.emptySlot }}</h2>
               <div v-if="slot.details" class="slot-types">
                 <span
                   v-for="typeEntry in slot.details.types"
@@ -72,133 +87,143 @@
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            class="remove-button"
-            :disabled="!slot.speciesName"
-            @click="clearSlot(slotIndex)"
-          >
-            {{ labels.remove }}
-          </button>
+          <div class="slot-header-actions">
+            <button type="button" class="select-pokemon-button" @click="openPicker('pokemon', slotIndex)">
+              {{ slot.details ? labels.changePokemon : labels.choosePokemon }}
+            </button>
+            <button
+              v-if="slot.details"
+              type="button"
+              class="toggle-editor-button"
+              :aria-expanded="slot.expanded"
+              @click="slot.expanded = !slot.expanded"
+            >
+              {{ slot.expanded ? labels.collapse : labels.edit }}
+            </button>
+            <button
+              type="button"
+              class="remove-button"
+              :disabled="!slot.speciesName"
+              @click="clearSlot(slotIndex)"
+            >
+              {{ labels.remove }}
+            </button>
+          </div>
         </header>
 
-        <div class="slot-form">
-          <label class="species-field">
-            <span>{{ labels.pokemon }}</span>
-            <input
-              v-model.trim="slot.speciesName"
-              list="team-pokemon-options"
-              :placeholder="labels.pokemonPlaceholder"
-              @change="loadSlot(slotIndex, false)"
-            >
-          </label>
+        <p v-if="slot.loading" class="slot-status" role="status">{{ labels.loadingPokemon }}</p>
+        <p v-else-if="slot.error" class="slot-error" role="alert">{{ slot.error }}</p>
 
-          <p v-if="slot.loading" class="slot-status" role="status">{{ labels.loadingPokemon }}</p>
-          <p v-else-if="slot.error" class="slot-error" role="alert">{{ slot.error }}</p>
+        <div v-if="slot.details && slot.expanded" class="slot-editor">
+          <section class="selection-grid">
+            <label class="number-field">
+              <span>{{ labels.level }}</span>
+              <input v-model.number="slot.level" type="number" min="1" max="100">
+            </label>
 
-          <template v-if="slot.details">
-            <div class="basic-grid">
-              <label>
-                <span>{{ labels.level }}</span>
-                <input v-model.number="slot.level" type="number" min="1" max="100">
-              </label>
-              <label>
-                <span>{{ labels.ability }}</span>
-                <select v-model="slot.ability">
-                  <option
-                    v-for="abilityEntry in slot.details.abilities"
-                    :key="abilityEntry.ability.name"
-                    :value="abilityEntry.ability.name"
-                  >
-                    {{ formatName(abilityEntry.ability.name) }}
-                    {{ abilityEntry.is_hidden ? `(${labels.hidden})` : '' }}
-                  </option>
-                </select>
-              </label>
-              <label>
-                <span>{{ labels.nature }}</span>
-                <select v-model="slot.nature">
-                  <option v-for="nature in natureOptions" :key="nature.name" :value="nature.name">
-                    {{ nature.label }} · {{ formatNatureEffect(nature) }}
-                  </option>
-                </select>
-              </label>
-              <label>
-                <span>{{ labels.item }}</span>
-                <input v-model.trim="slot.item" list="team-item-options" :placeholder="labels.itemPlaceholder">
-              </label>
+            <button type="button" class="selection-field" @click="openPicker('ability', slotIndex)">
+              <span>{{ labels.ability }}</span>
+              <strong>{{ getAbilityLabel(slot, slot.ability) || labels.chooseAbility }}</strong>
+              <small v-if="isHiddenAbility(slot, slot.ability)">{{ labels.hiddenAbility }}</small>
+              <b aria-hidden="true">›</b>
+            </button>
+
+            <label class="native-field">
+              <span>{{ labels.nature }}</span>
+              <select v-model="slot.nature">
+                <option v-for="nature in natureOptions" :key="nature.name" :value="nature.name">
+                  {{ nature.label }} · {{ formatNatureEffect(nature) }}
+                </option>
+              </select>
+            </label>
+
+            <button type="button" class="selection-field" @click="openPicker('item', slotIndex)">
+              <span>{{ labels.item }}</span>
+              <strong>{{ slot.item ? getItemLabel(slot.item) : labels.noItem }}</strong>
+              <small>{{ labels.chooseItemHint }}</small>
+              <b aria-hidden="true">›</b>
+            </button>
+          </section>
+
+          <fieldset class="moves-fieldset">
+            <legend>{{ labels.moves }}</legend>
+            <div class="move-grid">
+              <button
+                v-for="moveIndex in 4"
+                :key="moveIndex"
+                type="button"
+                class="selection-field move-field"
+                @click="openPicker('move', slotIndex, moveIndex - 1)"
+              >
+                <span>{{ labels.move }} {{ moveIndex }}</span>
+                <strong>
+                  {{ slot.moves[moveIndex - 1]
+                    ? getMoveLabel(slot, slot.moves[moveIndex - 1])
+                    : labels.chooseMove }}
+                </strong>
+                <small v-if="slot.moves[moveIndex - 1]">{{ labels.replaceSelection }}</small>
+                <b aria-hidden="true">›</b>
+              </button>
             </div>
+          </fieldset>
 
-            <fieldset class="moves-fieldset">
-              <legend>{{ labels.moves }}</legend>
-              <div class="move-grid">
-                <label v-for="moveIndex in 4" :key="moveIndex">
-                  <span>{{ labels.move }} {{ moveIndex }}</span>
-                  <input
-                    v-model.trim="slot.moves[moveIndex - 1]"
-                    :list="`team-move-options-${slotIndex}`"
-                    :placeholder="labels.movePlaceholder"
-                  >
-                </label>
+          <fieldset class="training-fieldset">
+            <legend>{{ labels.training }}</legend>
+            <div class="training-table">
+              <div class="training-row training-head">
+                <span>{{ labels.stat }}</span>
+                <span>{{ labels.base }}</span>
+                <span>{{ labels.iv }}</span>
+                <span>{{ labels.ev }}</span>
+                <span>{{ labels.value }}</span>
               </div>
-            </fieldset>
-
-            <fieldset class="training-fieldset">
-              <legend>{{ labels.training }}</legend>
-              <div class="training-table">
-                <div class="training-row training-head">
-                  <span>{{ labels.stat }}</span>
-                  <span>{{ labels.base }}</span>
-                  <span>{{ labels.iv }}</span>
-                  <span>{{ labels.ev }}</span>
-                  <span>{{ labels.value }}</span>
-                </div>
-                <div v-for="statName in statNames" :key="statName" class="training-row">
-                  <strong>{{ getStatLabel(statName) }}</strong>
-                  <span>{{ getBaseStat(slot, statName) }}</span>
-                  <input
-                    v-model.number="slot.ivs[statName]"
-                    type="number"
-                    min="0"
-                    max="31"
-                    @change="normalizeSlotNumber(slot.ivs, statName, 31)"
-                  >
-                  <input
-                    v-model.number="slot.evs[statName]"
-                    type="number"
-                    min="0"
-                    max="252"
-                    step="4"
-                    @change="normalizeSlotNumber(slot.evs, statName, 252)"
-                  >
-                  <strong>{{ getCalculatedStats(slot)[statName] }}</strong>
-                </div>
+              <div v-for="statName in statNames" :key="statName" class="training-row">
+                <strong>{{ getStatLabel(statName) }}</strong>
+                <span>{{ getBaseStat(slot, statName) }}</span>
+                <input
+                  v-model.number="slot.ivs[statName]"
+                  type="number"
+                  min="0"
+                  max="31"
+                  @change="normalizeSlotNumber(slot.ivs, statName, 31)"
+                >
+                <input
+                  v-model.number="slot.evs[statName]"
+                  type="number"
+                  min="0"
+                  max="252"
+                  step="4"
+                  @change="normalizeSlotNumber(slot.evs, statName, 252)"
+                >
+                <strong>{{ getCalculatedStats(slot)[statName] }}</strong>
               </div>
-              <div class="ev-summary" :class="{ invalid: getTotalEvs(slot.evs) > 510 }">
-                <span>{{ labels.totalEvs }}</span>
-                <strong>{{ getTotalEvs(slot.evs) }} / 510</strong>
-              </div>
-            </fieldset>
-          </template>
+            </div>
+            <div class="ev-summary" :class="{ invalid: getTotalEvs(slot.evs) > 510 }">
+              <span>{{ labels.totalEvs }}</span>
+              <strong>{{ getTotalEvs(slot.evs) }} / 510</strong>
+            </div>
+          </fieldset>
         </div>
-
-        <datalist :id="`team-move-options-${slotIndex}`">
-          <option v-for="move in getMoveOptions(slot)" :key="move" :value="move"></option>
-        </datalist>
       </article>
     </div>
 
-    <datalist id="team-pokemon-options">
-      <option v-for="pokemon in pokemonOptions" :key="pokemon.name" :value="pokemon.name">
-        #{{ pokemon.id }} {{ formatName(pokemon.name) }}
-      </option>
-    </datalist>
-
-    <datalist id="team-item-options">
-      <option v-for="item in itemOptions" :key="item.name" :value="item.name">
-        {{ formatName(item.name) }}
-      </option>
-    </datalist>
+    <TeamBuilderPicker
+      :open="picker.open"
+      :title="pickerTitle"
+      :eyebrow="pickerEyebrow"
+      :options="pickerOptions"
+      :selected-value="pickerSelectedValue"
+      :placeholder="pickerPlaceholder"
+      :search-label="labels.search"
+      :close-label="labels.close"
+      :empty-label="labels.noPickerResults"
+      :loading-label="labels.loadingOptions"
+      :more-label="labels.showMore"
+      :result-label="labels.resultCount"
+      :loading="pickerLoading"
+      @close="closePicker"
+      @select="applyPickerSelection"
+    />
   </section>
 </template>
 
@@ -213,6 +238,11 @@ import {
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
+  getCatalogLabel,
+  loadGermanCatalog,
+  loadGermanPokemonCatalog,
+} from '@/services/localizationCatalog';
+import {
   BATTLE_STATS,
   NATURES,
   calculatePokemonStats,
@@ -220,9 +250,10 @@ import {
   normalizeBaseStats,
 } from '@/utils/statCalculator';
 import { getLocalizedTypeName } from '@/utils/localization';
-import { getResourceId } from '@/utils/resource';
+import { formatResourceId, getResourceId } from '@/utils/resource';
 import { getPokemonSprite } from '@/utils/sprites';
 import { getTypeColor } from '@/utils/typeColors';
+import TeamBuilderPicker from './TeamBuilderPicker.vue';
 
 const props = defineProps({
   isShiny: {
@@ -236,13 +267,25 @@ const props = defineProps({
 });
 
 const { language } = useI18n();
-const STORAGE_KEY = 'pokedex-vue:competitive-team-v1';
+const STORAGE_KEY = 'pokedex-vue:competitive-team-v2';
 const TEAM_SIZE = 6;
 const statNames = BATTLE_STATS;
 const pokemonOptions = ref([]);
 const itemOptions = ref([]);
+const pokemonCatalog = ref(new Map());
+const itemCatalog = ref(new Map());
+const moveCatalog = ref(new Map());
+const abilityCatalog = ref(new Map());
 const copyState = ref('');
 const restoring = ref(false);
+const exportMode = ref('summary');
+const pickerLoading = ref(false);
+const picker = reactive({
+  open: false,
+  kind: '',
+  slotIndex: 0,
+  moveIndex: 0,
+});
 
 const createStatValues = (defaultValue) => Object.fromEntries(
   BATTLE_STATS.map((statName) => [statName, defaultValue]),
@@ -251,11 +294,13 @@ const createStatValues = (defaultValue) => Object.fromEntries(
 const createEmptySlot = (slotId) => ({
   slotId,
   speciesName: '',
+  resourceId: null,
   details: null,
   species: null,
   damageRelations: null,
   loading: false,
   error: '',
+  expanded: false,
   level: 50,
   ability: '',
   nature: 'hardy',
@@ -271,7 +316,7 @@ const labels = computed(() => language.value === 'de'
   ? {
       kicker: 'Kompetitives Spielen',
       title: 'Team Builder',
-      description: 'Stelle bis zu sechs Pokémon mit Fähigkeit, Item, Wesen, Attacken, EV und IV/DV zusammen. Das Team wird lokal im Browser gespeichert.',
+      description: 'Stelle bis zu sechs Pokémon oder Formen zusammen. Pokémon, Fähigkeiten, Items und Attacken werden in einem durchsuchbaren Auswahlfenster mit deutschen Namen angezeigt.',
       clearTeam: 'Team leeren',
       copy: 'Export kopieren',
       copied: 'Kopiert',
@@ -280,23 +325,32 @@ const labels = computed(() => language.value === 'de'
       sharedWeaknesses: 'Gemeinsame Schwächen',
       noTeamData: 'Noch keine Teamdaten vorhanden.',
       export: 'Team-Export',
+      exportFormat: 'Format',
+      readableSummary: 'Deutsche Übersicht',
       slot: 'Teamslot',
-      emptySlot: 'Leer',
+      emptySlot: 'Noch kein Pokémon ausgewählt',
       remove: 'Entfernen',
-      pokemon: 'Pokémon-Art',
-      pokemonPlaceholder: 'z. B. garchomp',
+      choosePokemon: 'Pokémon auswählen',
+      changePokemon: 'Pokémon wechseln',
+      edit: 'Bearbeiten',
+      collapse: 'Einklappen',
       loadingPokemon: 'Pokémon-Daten werden geladen…',
-      invalidPokemon: 'Die eingegebene Pokémon-Art wurde im nationalen Artenindex nicht gefunden.',
+      invalidPokemon: 'Dieses Pokémon oder diese Form wurde nicht gefunden.',
       loadError: 'Die Pokémon-Daten konnten nicht geladen werden.',
       level: 'Level',
       ability: 'Fähigkeit',
+      chooseAbility: 'Fähigkeit auswählen',
+      hiddenAbility: 'Versteckte Fähigkeit',
       hidden: 'versteckt',
       nature: 'Wesen',
       item: 'Trageitem',
-      itemPlaceholder: 'z. B. leftovers',
+      noItem: 'Kein Item',
+      chooseItemHint: 'Item auswählen oder entfernen',
       moves: 'Attacken',
       move: 'Attacke',
-      movePlaceholder: 'Attacke auswählen',
+      chooseMove: 'Attacke auswählen',
+      removeMove: 'Attacke entfernen',
+      replaceSelection: 'Auswahl ändern',
       training: 'EV / IV / DV und berechnete Werte',
       stat: 'Statuswert',
       base: 'Basis',
@@ -305,11 +359,36 @@ const labels = computed(() => language.value === 'de'
       value: 'Wert',
       totalEvs: 'EV gesamt',
       neutral: 'neutral',
+      search: 'Auswahl durchsuchen',
+      close: 'Auswahl schließen',
+      noPickerResults: 'Keine passenden Einträge gefunden.',
+      loadingOptions: 'Übersetzungen und Auswahl werden geladen…',
+      showMore: 'Mehr anzeigen',
+      resultCount: '{count} Ergebnisse',
+      pokemonPicker: 'Pokémon und Formen',
+      abilityPicker: 'Verfügbare Fähigkeiten',
+      itemPicker: 'Trageitems',
+      movePicker: 'Erlernbare Attacken',
+      pokemonPickerHint: 'Nach deutschem oder englischem Namen sowie Pokédex- beziehungsweise API-Nummer suchen',
+      abilityPickerHint: 'Fähigkeit suchen',
+      itemPickerHint: 'Item suchen',
+      movePickerHint: 'Attacke suchen',
+      selector: 'Auswahl',
+      pokemonEntry: 'Pokémon-Eintrag',
+      form: 'Form oder Variante',
+      standardForm: 'Standardform',
+      noItemDescription: 'Aktuell ausgewähltes Trageitem entfernen',
+      noMoveDescription: 'Diesen Attackenslot leeren',
+      abilityExport: 'Fähigkeit',
+      levelExport: 'Level',
+      natureExport: 'Wesen',
+      evExport: 'EVs',
+      ivExport: 'IVs / DVs',
     }
   : {
       kicker: 'Competitive play',
       title: 'Team Builder',
-      description: 'Build a team of up to six Pokémon with ability, item, nature, moves, EVs and IVs/DVs. The team is stored locally in the browser.',
+      description: 'Build a team of up to six Pokémon or forms. Pokémon, abilities, items and moves use a searchable selection dialog.',
       clearTeam: 'Clear team',
       copy: 'Copy export',
       copied: 'Copied',
@@ -318,23 +397,32 @@ const labels = computed(() => language.value === 'de'
       sharedWeaknesses: 'Shared weaknesses',
       noTeamData: 'No team data yet.',
       export: 'Team export',
+      exportFormat: 'Format',
+      readableSummary: 'Readable summary',
       slot: 'Team slot',
-      emptySlot: 'Empty',
+      emptySlot: 'No Pokémon selected',
       remove: 'Remove',
-      pokemon: 'Pokémon species',
-      pokemonPlaceholder: 'e.g. garchomp',
+      choosePokemon: 'Choose Pokémon',
+      changePokemon: 'Change Pokémon',
+      edit: 'Edit',
+      collapse: 'Collapse',
       loadingPokemon: 'Loading Pokémon data…',
-      invalidPokemon: 'The entered Pokémon species was not found in the National Pokédex species index.',
+      invalidPokemon: 'This Pokémon or form was not found.',
       loadError: 'The Pokémon data could not be loaded.',
       level: 'Level',
       ability: 'Ability',
+      chooseAbility: 'Choose ability',
+      hiddenAbility: 'Hidden ability',
       hidden: 'hidden',
       nature: 'Nature',
       item: 'Held item',
-      itemPlaceholder: 'e.g. leftovers',
+      noItem: 'No item',
+      chooseItemHint: 'Choose or remove an item',
       moves: 'Moves',
       move: 'Move',
-      movePlaceholder: 'Select a move',
+      chooseMove: 'Choose move',
+      removeMove: 'Remove move',
+      replaceSelection: 'Change selection',
       training: 'EV / IV / DV and calculated stats',
       stat: 'Stat',
       base: 'Base',
@@ -343,6 +431,31 @@ const labels = computed(() => language.value === 'de'
       value: 'Value',
       totalEvs: 'Total EVs',
       neutral: 'neutral',
+      search: 'Search selection',
+      close: 'Close selection',
+      noPickerResults: 'No matching entries found.',
+      loadingOptions: 'Loading translations and options…',
+      showMore: 'Show more',
+      resultCount: '{count} results',
+      pokemonPicker: 'Pokémon and forms',
+      abilityPicker: 'Available abilities',
+      itemPicker: 'Held items',
+      movePicker: 'Learnable moves',
+      pokemonPickerHint: 'Search by name or Pokédex/API number',
+      abilityPickerHint: 'Search ability',
+      itemPickerHint: 'Search item',
+      movePickerHint: 'Search move',
+      selector: 'Selection',
+      pokemonEntry: 'Pokémon entry',
+      form: 'Form or variant',
+      standardForm: 'Standard form',
+      noItemDescription: 'Remove the currently selected held item',
+      noMoveDescription: 'Clear this move slot',
+      abilityExport: 'Ability',
+      levelExport: 'Level',
+      natureExport: 'Nature',
+      evExport: 'EVs',
+      ivExport: 'IVs / DVs',
     });
 
 const germanNatureNames = {
@@ -365,16 +478,12 @@ const natureOptions = computed(() => NATURES.map((nature) => ({
   ...nature,
   label: language.value === 'de'
     ? germanNatureNames[nature.name]
-    : nature.name.charAt(0).toUpperCase() + nature.name.slice(1),
+    : formatName(nature.name),
 })));
 
 const countValues = (values) => {
   const counts = new Map();
-
-  for (const value of values) {
-    counts.set(value, (counts.get(value) || 0) + 1);
-  }
-
+  for (const value of values) counts.set(value, (counts.get(value) || 0) + 1);
   return [...counts.entries()]
     .map(([type, count]) => ({ type, count }))
     .sort((first, second) => second.count - first.count || first.type.localeCompare(second.type));
@@ -400,10 +509,7 @@ const getStatAbbreviation = (statName) => ({
   'special-attack': 'SpA', 'special-defense': 'SpD', speed: 'Spe',
 })[statName];
 const formatNatureEffect = (nature) => {
-  if (!nature.increased || !nature.decreased) {
-    return labels.value.neutral;
-  }
-
+  if (!nature.increased || !nature.decreased) return labels.value.neutral;
   return `+${getStatLabel(nature.increased)} / −${getStatLabel(nature.decreased)}`;
 };
 const getBaseStat = (slot, statName) => normalizeBaseStats(slot.details?.stats || [])[statName];
@@ -414,24 +520,74 @@ const getCalculatedStats = (slot) => calculatePokemonStats({
   level: slot.level,
   nature: slot.nature,
 });
-const getMoveOptions = (slot) => [...new Set(
-  (slot.details?.moves || []).map((entry) => entry.move?.name).filter(Boolean),
-)].sort();
 
-const teamExport = computed(() => teamSlots
+const getSlotPokemonName = (slot) => {
+  if (!slot.details) return '';
+  return language.value === 'de'
+    ? getCatalogLabel(pokemonCatalog.value, slot.details.id, slot.speciesName)
+    : formatName(slot.speciesName);
+};
+const getAbilityEntry = (slot, abilityName) => (slot.details?.abilities || [])
+  .find((entry) => entry.ability?.name === abilityName);
+const getAbilityLabel = (slot, abilityName) => {
+  const entry = getAbilityEntry(slot, abilityName);
+  const id = getResourceId(entry?.ability?.url);
+  return language.value === 'de'
+    ? getCatalogLabel(abilityCatalog.value, id, abilityName)
+    : formatName(abilityName);
+};
+const isHiddenAbility = (slot, abilityName) => Boolean(getAbilityEntry(slot, abilityName)?.is_hidden);
+const getMoveEntry = (slot, moveName) => (slot.details?.moves || [])
+  .find((entry) => entry.move?.name === moveName);
+const getMoveLabel = (slot, moveName) => {
+  const entry = getMoveEntry(slot, moveName);
+  const id = getResourceId(entry?.move?.url);
+  return language.value === 'de'
+    ? getCatalogLabel(moveCatalog.value, id, moveName)
+    : formatName(moveName);
+};
+const getItemEntry = (itemName) => itemOptions.value.find((item) => item.name === itemName);
+const getItemLabel = (itemName) => {
+  const entry = getItemEntry(itemName);
+  return language.value === 'de'
+    ? getCatalogLabel(itemCatalog.value, entry?.id, itemName)
+    : formatName(itemName);
+};
+
+const readableExport = computed(() => teamSlots
+  .filter((slot) => slot.details)
+  .map((slot) => {
+    const lines = [slot.item
+      ? `${getSlotPokemonName(slot)} @ ${getItemLabel(slot.item)}`
+      : getSlotPokemonName(slot)];
+    if (slot.ability) lines.push(`${labels.value.abilityExport}: ${getAbilityLabel(slot, slot.ability)}`);
+    lines.push(`${labels.value.levelExport}: ${slot.level}`);
+    const nature = natureOptions.value.find((entry) => entry.name === slot.nature);
+    lines.push(`${labels.value.natureExport}: ${nature?.label || formatName(slot.nature)}`);
+    const evLine = BATTLE_STATS
+      .filter((statName) => Number(slot.evs[statName]) > 0)
+      .map((statName) => `${slot.evs[statName]} ${getStatLabel(statName)}`)
+      .join(' / ');
+    const ivLine = BATTLE_STATS
+      .filter((statName) => Number(slot.ivs[statName]) < 31)
+      .map((statName) => `${slot.ivs[statName]} ${getStatLabel(statName)}`)
+      .join(' / ');
+    if (evLine) lines.push(`${labels.value.evExport}: ${evLine}`);
+    if (ivLine) lines.push(`${labels.value.ivExport}: ${ivLine}`);
+    slot.moves.filter(Boolean).forEach((move) => lines.push(`- ${getMoveLabel(slot, move)}`));
+    return lines.join('\n');
+  })
+  .join('\n\n'));
+
+const showdownExport = computed(() => teamSlots
   .filter((slot) => slot.details)
   .map((slot) => {
     const lines = [slot.item
       ? `${formatName(slot.speciesName)} @ ${formatName(slot.item)}`
       : formatName(slot.speciesName)];
-
-    if (slot.ability) {
-      lines.push(`Ability: ${formatName(slot.ability)}`);
-    }
-
+    if (slot.ability) lines.push(`Ability: ${formatName(slot.ability)}`);
     lines.push(`Level: ${slot.level}`);
     lines.push(`${formatName(slot.nature)} Nature`);
-
     const evLine = BATTLE_STATS
       .filter((statName) => Number(slot.evs[statName]) > 0)
       .map((statName) => `${slot.evs[statName]} ${getStatAbbreviation(statName)}`)
@@ -440,19 +596,111 @@ const teamExport = computed(() => teamSlots
       .filter((statName) => Number(slot.ivs[statName]) < 31)
       .map((statName) => `${slot.ivs[statName]} ${getStatAbbreviation(statName)}`)
       .join(' / ');
-
-    if (evLine) {
-      lines.push(`EVs: ${evLine}`);
-    }
-
-    if (ivLine) {
-      lines.push(`IVs: ${ivLine}`);
-    }
-
+    if (evLine) lines.push(`EVs: ${evLine}`);
+    if (ivLine) lines.push(`IVs: ${ivLine}`);
     slot.moves.filter(Boolean).forEach((move) => lines.push(`- ${formatName(move)}`));
     return lines.join('\n');
   })
   .join('\n\n'));
+const teamExport = computed(() => exportMode.value === 'showdown'
+  ? showdownExport.value
+  : readableExport.value);
+
+const pickerSlot = computed(() => teamSlots[picker.slotIndex]);
+const pickerTitle = computed(() => ({
+  pokemon: labels.value.pokemonPicker,
+  ability: labels.value.abilityPicker,
+  item: labels.value.itemPicker,
+  move: labels.value.movePicker,
+})[picker.kind] || labels.value.selector);
+const pickerEyebrow = computed(() => picker.kind === 'pokemon'
+  ? labels.value.pokemonEntry
+  : pickerSlot.value?.details
+    ? getSlotPokemonName(pickerSlot.value)
+    : labels.value.selector);
+const pickerPlaceholder = computed(() => ({
+  pokemon: labels.value.pokemonPickerHint,
+  ability: labels.value.abilityPickerHint,
+  item: labels.value.itemPickerHint,
+  move: labels.value.movePickerHint,
+})[picker.kind] || labels.value.search);
+const pickerSelectedValue = computed(() => {
+  const slot = pickerSlot.value;
+  if (!slot) return '';
+  if (picker.kind === 'pokemon') return slot.speciesName;
+  if (picker.kind === 'ability') return slot.ability;
+  if (picker.kind === 'item') return slot.item;
+  if (picker.kind === 'move') return slot.moves[picker.moveIndex] || '';
+  return '';
+});
+
+const pokemonPickerOptions = computed(() => pokemonOptions.value.map((pokemon) => ({
+  value: pokemon.name,
+  label: language.value === 'de'
+    ? getCatalogLabel(pokemonCatalog.value, pokemon.id, pokemon.name)
+    : formatName(pokemon.name),
+  aliases: [pokemon.name],
+  number: formatResourceId(pokemon.id),
+  description: pokemon.id > 1025 ? labels.value.form : labels.value.standardForm,
+  image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemon.id}.png`,
+})));
+const abilityPickerOptions = computed(() => (pickerSlot.value?.details?.abilities || []).map((entry) => {
+  const id = getResourceId(entry.ability?.url);
+  return {
+    value: entry.ability.name,
+    label: language.value === 'de'
+      ? getCatalogLabel(abilityCatalog.value, id, entry.ability.name)
+      : formatName(entry.ability.name),
+    aliases: [entry.ability.name],
+    number: id ? String(id) : '',
+    description: entry.is_hidden ? labels.value.hiddenAbility : labels.value.ability,
+    symbol: entry.is_hidden ? '✦' : '◆',
+  };
+}));
+const itemPickerOptions = computed(() => [{
+  value: '',
+  label: labels.value.noItem,
+  description: labels.value.noItemDescription,
+  symbol: '×',
+}, ...itemOptions.value.map((item) => ({
+  value: item.name,
+  label: language.value === 'de'
+    ? getCatalogLabel(itemCatalog.value, item.id, item.name)
+    : formatName(item.name),
+  aliases: [item.name],
+  number: formatResourceId(item.id),
+  image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${item.name}.png`,
+}))]);
+const movePickerOptions = computed(() => {
+  const moves = [...new Map(
+    (pickerSlot.value?.details?.moves || [])
+      .filter((entry) => entry.move?.name)
+      .map((entry) => [entry.move.name, entry]),
+  ).values()];
+  return [{
+    value: '',
+    label: labels.value.removeMove,
+    description: labels.value.noMoveDescription,
+    symbol: '×',
+  }, ...moves.map((entry) => {
+    const id = getResourceId(entry.move.url);
+    return {
+      value: entry.move.name,
+      label: language.value === 'de'
+        ? getCatalogLabel(moveCatalog.value, id, entry.move.name)
+        : formatName(entry.move.name),
+      aliases: [entry.move.name],
+      number: id ? String(id) : '',
+      symbol: '⚡',
+    };
+  })];
+});
+const pickerOptions = computed(() => ({
+  pokemon: pokemonPickerOptions.value,
+  ability: abilityPickerOptions.value,
+  item: itemPickerOptions.value,
+  move: movePickerOptions.value,
+})[picker.kind] || []);
 
 const normalizeSlotNumber = (target, statName, maximum) => {
   const value = Number(target[statName]);
@@ -463,8 +711,8 @@ const clearLoadedData = (slot, preserveConfiguration) => {
   slot.details = null;
   slot.species = null;
   slot.damageRelations = null;
+  slot.resourceId = null;
   slot.error = '';
-
   if (!preserveConfiguration) {
     slot.ability = '';
     slot.item = '';
@@ -472,42 +720,49 @@ const clearLoadedData = (slot, preserveConfiguration) => {
   }
 };
 
+const loadSlotLocalizationCatalogs = async () => {
+  if (language.value !== 'de') return;
+  const results = await Promise.allSettled([
+    loadGermanCatalog('abilities'),
+    loadGermanCatalog('moves'),
+  ]);
+  if (results[0].status === 'fulfilled') abilityCatalog.value = results[0].value;
+  if (results[1].status === 'fulfilled') moveCatalog.value = results[1].value;
+};
+
 const loadSlot = async (slotIndex, preserveConfiguration = false) => {
   const slot = teamSlots[slotIndex];
-  const speciesName = slot.speciesName.trim().toLowerCase();
+  const pokemonName = slot.speciesName.trim().toLowerCase();
   const savedAbility = slot.ability;
   const savedMoves = [...slot.moves];
   const savedItem = slot.item;
-  slot.speciesName = speciesName;
+  slot.speciesName = pokemonName;
   clearLoadedData(slot, preserveConfiguration);
-
-  if (!speciesName) {
-    return;
-  }
-
-  if (!pokemonOptions.value.some((pokemon) => pokemon.name === speciesName)) {
+  if (!pokemonName) return;
+  if (!pokemonOptions.value.some((pokemon) => pokemon.name === pokemonName)) {
     slot.error = labels.value.invalidPokemon;
     return;
   }
 
   slot.loading = true;
-
   try {
-    const [detailsResponse, speciesResponse] = await Promise.all([
-      PokeAPI.getPokemonDetails(speciesName),
+    const detailsResponse = await PokeAPI.getPokemonDetails(pokemonName);
+    const speciesName = detailsResponse.data.species?.name || pokemonName;
+    const [speciesResponse, damageRelations] = await Promise.all([
       PokeAPI.getPokemonSpecies(speciesName),
+      PokeAPI.getPokemonDamageRelations(detailsResponse.data.types),
     ]);
     slot.details = detailsResponse.data;
+    slot.resourceId = detailsResponse.data.id;
     slot.species = speciesResponse.data;
-    slot.damageRelations = await PokeAPI.getPokemonDamageRelations(detailsResponse.data.types);
-
+    slot.damageRelations = damageRelations;
+    slot.expanded = true;
     const validAbilities = new Set(
       (detailsResponse.data.abilities || []).map((entry) => entry.ability.name),
     );
     slot.ability = preserveConfiguration && validAbilities.has(savedAbility)
       ? savedAbility
       : detailsResponse.data.abilities?.[0]?.ability?.name || '';
-
     if (preserveConfiguration) {
       const validMoves = new Set(
         (detailsResponse.data.moves || []).map((entry) => entry.move?.name).filter(Boolean),
@@ -515,11 +770,61 @@ const loadSlot = async (slotIndex, preserveConfiguration = false) => {
       slot.moves = savedMoves.map((move) => validMoves.has(move) ? move : '');
       slot.item = savedItem;
     }
+    void loadSlotLocalizationCatalogs();
   } catch (requestError) {
-    console.error(`Failed to load team slot ${speciesName}:`, requestError);
+    console.error(`Failed to load team slot ${pokemonName}:`, requestError);
     slot.error = labels.value.loadError;
   } finally {
     slot.loading = false;
+  }
+};
+
+const openPicker = async (kind, slotIndex, moveIndex = 0) => {
+  picker.kind = kind;
+  picker.slotIndex = slotIndex;
+  picker.moveIndex = moveIndex;
+  picker.open = true;
+  pickerLoading.value = true;
+  try {
+    if (language.value === 'de') {
+      if (kind === 'pokemon' && !pokemonCatalog.value.size) {
+        pokemonCatalog.value = await loadGermanPokemonCatalog();
+      } else if (kind === 'item' && !itemCatalog.value.size) {
+        itemCatalog.value = await loadGermanCatalog('items');
+      } else if (kind === 'move' && !moveCatalog.value.size) {
+        moveCatalog.value = await loadGermanCatalog('moves');
+      } else if (kind === 'ability' && !abilityCatalog.value.size) {
+        abilityCatalog.value = await loadGermanCatalog('abilities');
+      }
+    }
+  } catch (catalogError) {
+    console.error(`Failed to load ${kind} localization catalog:`, catalogError);
+  } finally {
+    pickerLoading.value = false;
+  }
+};
+
+const closePicker = () => {
+  picker.open = false;
+};
+
+const applyPickerSelection = async (option) => {
+  const slot = pickerSlot.value;
+  if (!slot) return;
+  const kind = picker.kind;
+  const slotIndex = picker.slotIndex;
+  const moveIndex = picker.moveIndex;
+  closePicker();
+  if (kind === 'pokemon') {
+    if (slot.speciesName === option.value && slot.details) return;
+    slot.speciesName = option.value;
+    await loadSlot(slotIndex, false);
+  } else if (kind === 'ability') {
+    slot.ability = option.value;
+  } else if (kind === 'item') {
+    slot.item = option.value;
+  } else if (kind === 'move') {
+    slot.moves[moveIndex] = option.value;
   }
 };
 
@@ -527,9 +832,7 @@ const clearSlot = (slotIndex) => {
   Object.assign(teamSlots[slotIndex], createEmptySlot(slotIndex + 1));
 };
 const clearTeam = () => {
-  for (let index = 0; index < TEAM_SIZE; index += 1) {
-    clearSlot(index);
-  }
+  for (let index = 0; index < TEAM_SIZE; index += 1) clearSlot(index);
 };
 const serializeTeam = () => teamSlots.map((slot) => ({
   speciesName: slot.speciesName,
@@ -542,10 +845,7 @@ const serializeTeam = () => teamSlots.map((slot) => ({
   evs: { ...slot.evs },
 }));
 const saveTeam = () => {
-  if (restoring.value || typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
-
+  if (restoring.value || typeof window === 'undefined' || !window.localStorage) return;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeTeam()));
   } catch {
@@ -554,19 +854,15 @@ const saveTeam = () => {
 };
 
 const restoreTeam = async () => {
-  if (typeof window === 'undefined' || !window.localStorage) {
-    return;
-  }
-
+  if (typeof window === 'undefined' || !window.localStorage) return;
   restoring.value = true;
-
   try {
-    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
-
-    if (!Array.isArray(stored)) {
-      return;
-    }
-
+    const stored = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEY)
+      || window.localStorage.getItem('pokedex-vue:competitive-team-v1')
+      || 'null',
+    );
+    if (!Array.isArray(stored)) return;
     stored.slice(0, TEAM_SIZE).forEach((savedSlot, index) => {
       const slot = teamSlots[index];
       slot.speciesName = savedSlot.speciesName || '';
@@ -580,10 +876,9 @@ const restoreTeam = async () => {
       Object.assign(slot.ivs, createStatValues(31), savedSlot.ivs || {});
       Object.assign(slot.evs, createStatValues(0), savedSlot.evs || {});
     });
-
-    await Promise.all(teamSlots.map((slot, index) => {
-      return slot.speciesName ? loadSlot(index, true) : Promise.resolve();
-    }));
+    await Promise.all(teamSlots.map((slot, index) => (
+      slot.speciesName ? loadSlot(index, true) : Promise.resolve()
+    )));
   } catch (requestError) {
     console.error('Failed to restore competitive team:', requestError);
   } finally {
@@ -594,14 +889,24 @@ const restoreTeam = async () => {
 
 const loadOptions = async () => {
   try {
-    const [speciesResponse, itemsResponse] = await Promise.all([
-      PokeAPI.getPokemonSpeciesList(),
+    const [pokemonResponse, itemsResponse] = await Promise.all([
+      PokeAPI.getPokemons(),
       PokeAPI.getItems(),
     ]);
-    pokemonOptions.value = speciesResponse.data.results
+    pokemonOptions.value = pokemonResponse.data.results
       .map((pokemon) => ({ ...pokemon, id: getResourceId(pokemon.url) }))
-      .filter((pokemon) => pokemon.id !== null);
-    itemOptions.value = itemsResponse.data.results;
+      .filter((pokemon) => pokemon.id !== null)
+      .sort((first, second) => first.id - second.id);
+    itemOptions.value = itemsResponse.data.results
+      .map((item) => ({ ...item, id: getResourceId(item.url) }))
+      .filter((item) => item.id !== null);
+    if (language.value === 'de') {
+      try {
+        pokemonCatalog.value = await loadGermanPokemonCatalog();
+      } catch (catalogError) {
+        console.error('Failed to preload German Pokémon names:', catalogError);
+      }
+    }
     await restoreTeam();
   } catch (requestError) {
     console.error('Failed to load team builder options:', requestError);
@@ -615,353 +920,87 @@ const copyExport = async () => {
   } catch {
     copyState.value = labels.value.copyFailed;
   }
-
   window.setTimeout(() => {
     copyState.value = labels.value.copy;
   }, 1800);
 };
 
-watch(teamSlots, saveTeam, { deep: true });
+watch(serializeTeam, saveTeam, { deep: true });
 watch(labels, () => {
   copyState.value = labels.value.copy;
+  if (language.value === 'en' && exportMode.value === 'summary') exportMode.value = 'showdown';
 }, { immediate: true });
+watch(language, async (newLanguage) => {
+  if (newLanguage !== 'de') return;
+  try {
+    pokemonCatalog.value = await loadGermanPokemonCatalog();
+    void loadSlotLocalizationCatalogs();
+  } catch (catalogError) {
+    console.error('Failed to switch team builder localization:', catalogError);
+  }
+});
 
 onMounted(loadOptions);
 </script>
 
 <style scoped>
-.team-builder {
-  display: grid;
-  gap: 14px;
-}
-
-.team-header,
-.team-overview article,
-.team-slot {
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-  box-shadow: 0 2px 5px var(--legacy-shadow);
-}
-
-.team-header {
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-  align-items: start;
-  padding: 20px;
-}
-
-.team-header p,
-.slot-identity p {
-  margin: 0 0 5px;
-  color: var(--legacy-muted);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.team-header h1 {
-  margin: 0;
-  font-size: clamp(1.8rem, 4vw, 3rem);
-}
-
-.team-header > div > span {
-  display: block;
-  max-width: 850px;
-  margin-top: 8px;
-  color: var(--legacy-muted);
-  line-height: 1.5;
-}
-
-.team-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  justify-content: flex-end;
-}
-
-.team-actions button,
-.remove-button {
-  min-height: 36px;
-  padding: 6px 10px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-page);
-}
-
-.remove-button:disabled {
-  opacity: 0.45;
-}
-
-.team-overview {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.team-overview article {
-  padding: 13px;
-}
-
-.team-overview h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.team-overview p {
-  margin: 8px 0 0;
-  color: var(--legacy-muted);
-}
-
-.overview-chips,
-.slot-types {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
-}
-
-.overview-chips span,
-.slot-types span {
-  padding: 4px 7px;
-  border: 1px solid var(--legacy-border);
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
-.weakness-chips span {
-  border-color: var(--danger-color);
-}
-
-.export-card {
-  grid-column: 1 / -1;
-}
-
-.export-card textarea {
-  width: 100%;
-  margin-top: 9px;
-  padding: 9px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-page);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  resize: vertical;
-}
-
-.slot-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  align-items: start;
-}
-
-.team-slot {
-  min-width: 0;
-}
-
-.slot-header {
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  align-items: start;
-  padding: 11px;
-  border-bottom: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.slot-identity {
-  display: flex;
-  gap: 9px;
-  min-width: 0;
-  align-items: center;
-}
-
-.slot-sprite {
-  display: grid;
-  flex: 0 0 auto;
-  width: 88px;
-  height: 88px;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-}
-
-.slot-sprite img {
-  width: 84px;
-  height: 84px;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-
-.slot-sprite > span {
-  color: var(--legacy-muted);
-  font-size: 1.7rem;
-  font-weight: 900;
-}
-
-.slot-identity h2 {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: 1.15rem;
-}
-
-.slot-types span {
-  color: #222222;
-  margin-top: 0;
-  font-size: 0.58rem;
-  font-weight: 900;
-}
-
-.slot-form {
-  padding: 11px;
-}
-
-.slot-form label,
-.moves-fieldset label {
-  display: grid;
-  gap: 3px;
-  color: var(--legacy-muted);
-  font-size: 0.64rem;
-  font-weight: 850;
-}
-
-.slot-form input,
-.slot-form select {
-  width: 100%;
-  min-width: 0;
-  min-height: 34px;
-  padding: 5px 7px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-page);
-}
-
-.species-field {
-  margin-bottom: 9px;
-}
-
-.slot-status,
-.slot-error {
-  margin: 7px 0;
-  color: var(--legacy-muted);
-}
-
-.slot-error {
-  color: var(--danger-color);
-}
-
-.basic-grid,
-.move-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.moves-fieldset,
-.training-fieldset {
-  min-width: 0;
-  padding: 9px;
-  margin: 10px 0 0;
-  border: 1px solid var(--legacy-border);
-}
-
-.moves-fieldset legend,
-.training-fieldset legend {
-  padding: 0 4px;
-  font-size: 0.7rem;
-  font-weight: 900;
-}
-
-.training-table {
-  display: grid;
-  gap: 4px;
-  overflow-x: auto;
-}
-
-.training-row {
-  display: grid;
-  grid-template-columns: minmax(118px, 1.4fr) 52px 68px 68px 62px;
-  gap: 5px;
-  align-items: center;
-  min-width: 425px;
-  padding: 5px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.training-head {
-  color: var(--legacy-muted);
-  font-size: 0.6rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.training-row input {
-  min-height: 30px;
-}
-
-.ev-summary {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-  padding: 7px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-  font-size: 0.7rem;
-}
-
-.ev-summary.invalid {
-  border-color: var(--danger-color);
-  color: var(--danger-color);
-}
-
-@media (max-width: 1200px) {
-  .slot-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 760px) {
-  .team-header {
-    align-items: stretch;
-    flex-direction: column;
-    padding: 15px;
-  }
-
-  .team-actions {
-    justify-content: flex-start;
-  }
-
-  .team-overview {
-    grid-template-columns: 1fr;
-  }
-
-  .export-card {
-    grid-column: auto;
-  }
-}
-
-@media (max-width: 460px) {
-  .slot-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .slot-sprite {
-    width: 74px;
-    height: 74px;
-  }
-
-  .slot-sprite img {
-    width: 70px;
-    height: 70px;
-  }
-
-  .basic-grid,
-  .move-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.team-builder { display: grid; gap: 14px; min-width: 0; }
+.team-header, .team-overview article, .team-slot { border: 1px solid var(--legacy-border); border-radius: 4px; background: var(--legacy-surface); box-shadow: 0 2px 5px var(--legacy-shadow); }
+.team-header { display: flex; gap: 18px; justify-content: space-between; align-items: start; padding: 20px; }
+.team-header p, .slot-identity p { margin: 0 0 5px; color: var(--legacy-muted); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.team-header h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 3rem); }
+.team-header > div > span { display: block; max-width: 850px; margin-top: 7px; color: var(--legacy-muted); line-height: 1.5; }
+.team-actions, .slot-header-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.team-actions button, .slot-header-actions button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--legacy-border-strong); border-radius: 4px; color: var(--legacy-text); cursor: pointer; background: var(--legacy-page); }
+.team-actions button:hover, .slot-header-actions button:hover:not(:disabled) { background: var(--legacy-surface-hover); }
+.team-actions button:disabled, .slot-header-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
+.team-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.team-overview article { padding: 15px; }
+.team-overview h2 { margin: 0; font-size: 1rem; }
+.team-overview p { margin: 9px 0 0; color: var(--legacy-muted); }
+.overview-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.overview-chips span { padding: 4px 7px; border: 1px solid var(--legacy-border); border-radius: 999px; font-size: 0.68rem; font-weight: 850; background: var(--legacy-page); }
+.weakness-chips span { border-color: color-mix(in srgb, #ef4444 50%, var(--legacy-border)); }
+.export-card { grid-column: 1 / -1; }
+.export-heading { display: flex; gap: 12px; justify-content: space-between; align-items: end; }
+.export-heading label { display: grid; gap: 3px; color: var(--legacy-muted); font-size: 0.62rem; font-weight: 850; }
+.export-heading select { min-height: 34px; padding: 5px 8px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); }
+.export-card textarea { width: 100%; min-height: 150px; margin-top: 10px; padding: 10px; resize: vertical; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.45; }
+.slot-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.team-slot { min-width: 0; overflow: hidden; }
+.team-slot.filled { border-color: var(--legacy-border-strong); }
+.slot-header { display: flex; gap: 14px; justify-content: space-between; align-items: center; padding: 13px; background: var(--legacy-page); }
+.slot-identity { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.slot-sprite { display: grid; flex: 0 0 auto; width: 88px; height: 88px; place-items: center; overflow: hidden; border: 1px solid var(--legacy-border); border-radius: 4px; color: var(--legacy-muted); cursor: pointer; font-size: 1.35rem; font-weight: 900; background: var(--legacy-surface); }
+.slot-sprite img { width: 84px; height: 84px; object-fit: contain; image-rendering: pixelated; }
+.slot-title { min-width: 0; }
+.slot-title h2 { margin: 0; overflow: hidden; font-size: 1.15rem; text-overflow: ellipsis; white-space: nowrap; }
+.slot-types { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.slot-types span { padding: 3px 7px; color: #222222; font-size: 0.62rem; font-weight: 900; }
+.slot-status, .slot-error { margin: 0; padding: 16px; color: var(--legacy-muted); }
+.slot-error { color: #ef4444; }
+.slot-editor { display: grid; gap: 14px; padding: 14px; border-top: 1px solid var(--legacy-border); }
+.selection-grid { display: grid; grid-template-columns: 110px repeat(3, minmax(0, 1fr)); gap: 8px; }
+.number-field, .native-field { display: grid; gap: 5px; min-width: 0; color: var(--legacy-muted); font-size: 0.68rem; font-weight: 850; }
+.number-field input, .native-field select { width: 100%; min-height: 48px; padding: 7px 9px; border: 1px solid var(--legacy-border); border-radius: 4px; color: var(--legacy-text); background: var(--legacy-page); }
+.selection-field { position: relative; display: grid; min-width: 0; min-height: 70px; padding: 8px 34px 8px 10px; border: 1px solid var(--legacy-border); border-radius: 4px; color: var(--legacy-text); text-align: left; cursor: pointer; background: var(--legacy-page); }
+.selection-field:hover, .selection-field:focus-visible { border-color: var(--focus-color); outline: none; background: var(--legacy-surface-hover); }
+.selection-field > span { color: var(--legacy-muted); font-size: 0.62rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.selection-field strong { margin-top: 5px; overflow: hidden; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.selection-field small { margin-top: 3px; overflow: hidden; color: var(--legacy-muted); font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+.selection-field b { position: absolute; top: 50%; right: 11px; color: var(--legacy-muted); font-size: 1.3rem; transform: translateY(-50%); }
+.moves-fieldset, .training-fieldset { min-width: 0; padding: 12px; border: 1px solid var(--legacy-border); }
+.moves-fieldset legend, .training-fieldset legend { padding: 0 7px; font-weight: 900; }
+.move-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.move-field { min-height: 72px; }
+.training-table { display: grid; overflow-x: auto; }
+.training-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) repeat(4, minmax(62px, 0.7fr)); gap: 7px; align-items: center; min-width: 520px; padding: 6px 0; border-bottom: 1px solid var(--legacy-border); }
+.training-row:last-child { border-bottom: 0; }
+.training-head { color: var(--legacy-muted); font-size: 0.62rem; font-weight: 900; text-transform: uppercase; }
+.training-row input { width: 100%; min-height: 34px; padding: 4px 6px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); }
+.ev-summary { display: flex; justify-content: space-between; margin-top: 10px; padding: 8px 10px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.ev-summary.invalid { border-color: #ef4444; color: #ef4444; }
+@media (max-width: 1300px) { .slot-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .team-header, .slot-header { align-items: stretch; flex-direction: column; } .team-actions, .slot-header-actions { justify-content: flex-start; } .selection-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .team-overview, .selection-grid, .move-grid { grid-template-columns: 1fr; } .slot-identity { align-items: flex-start; } .slot-sprite { width: 72px; height: 72px; } .slot-sprite img { width: 68px; height: 68px; } .export-heading { align-items: stretch; flex-direction: column; } }
 </style>
