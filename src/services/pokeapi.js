@@ -170,8 +170,24 @@ export default {
     return getNamedResource('item', nameOrId);
   },
 
+  getItemCategory(nameOrId) {
+    return getNamedResource('item-category', nameOrId);
+  },
+
+  getItemAttribute(nameOrId) {
+    return getNamedResource('item-attribute', nameOrId);
+  },
+
   getBerryDetails(nameOrId) {
     return getNamedResource('berry', nameOrId);
+  },
+
+  getVersionGroup(nameOrId) {
+    return getNamedResource('version-group', nameOrId);
+  },
+
+  getVersion(nameOrId) {
+    return getNamedResource('version', nameOrId);
   },
 
   getEvolutionChain(url) {

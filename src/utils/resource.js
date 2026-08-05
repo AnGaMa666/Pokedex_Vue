@@ -47,7 +47,8 @@ export const getLocalizedFlavorText = (entries = [], language = 'en') => {
   const localizedEntries = entries.filter((candidate) => candidate.language?.name === language);
   const englishEntries = entries.filter((candidate) => candidate.language?.name === 'en');
   const entry = localizedEntries.at(-1) || englishEntries.at(-1);
-  return entry?.flavor_text?.replace(/[\n\f]+/g, ' ') || '';
+  const text = entry?.flavor_text ?? entry?.text ?? '';
+  return text.replace(/[\n\f]+/g, ' ');
 };
 
 export const getLocalizedMoveDescription = ({
@@ -69,4 +70,24 @@ export const getLocalizedMoveDescription = ({
   }
 
   return getLocalizedEffect(effectEntries, effectChance, language);
+};
+
+export const getLocalizedItemDescription = ({
+  effectEntries = [],
+  flavorTextEntries = [],
+  language = 'en',
+} = {}) => {
+  const localizedEffect = effectEntries.find((entry) => entry.language?.name === language)?.short_effect;
+
+  if (localizedEffect) {
+    return localizedEffect;
+  }
+
+  const localizedFlavorText = getLocalizedFlavorText(flavorTextEntries, language);
+
+  if (localizedFlavorText) {
+    return localizedFlavorText;
+  }
+
+  return getLocalizedEffect(effectEntries, null, language);
 };
