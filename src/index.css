@@ -11,10 +11,32 @@
   --legacy-surface-hover: #eaeaea;
   --legacy-surface-active: #e0e0e0;
   --legacy-border: #cccccc;
-  --legacy-border-strong: #aaaaaa;
+  --legacy-border-strong: #999999;
   --legacy-text: #333333;
   --legacy-muted: #666666;
-  --legacy-shadow: rgba(0, 0, 0, 0.12);
+  --legacy-shadow: rgba(0, 0, 0, 0.14);
+  --focus-color: #2563eb;
+  --danger-color: #b91c1c;
+  --success-color: #15803d;
+  color-scheme: light;
+}
+
+:root.dark {
+  color: #f3f4f6;
+  background: #101114;
+  --legacy-page: #101114;
+  --legacy-surface: #1b1d22;
+  --legacy-surface-hover: #282b32;
+  --legacy-surface-active: #323640;
+  --legacy-border: #3d414b;
+  --legacy-border-strong: #686f7c;
+  --legacy-text: #f3f4f6;
+  --legacy-muted: #aeb5c1;
+  --legacy-shadow: rgba(0, 0, 0, 0.48);
+  --focus-color: #60a5fa;
+  --danger-color: #f87171;
+  --success-color: #4ade80;
+  color-scheme: dark;
 }
 
 * {
@@ -24,6 +46,8 @@
 html {
   min-width: 320px;
   min-height: 100%;
+  overflow-y: scroll;
+  color: var(--legacy-text);
   background: var(--legacy-page);
 }
 
@@ -33,92 +57,112 @@ body {
   margin: 0;
   color: var(--legacy-text);
   background: var(--legacy-page);
+  transition: color 160ms ease, background-color 160ms ease;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
+button,
+input,
+select,
+textarea {
+  color: var(--legacy-text);
+}
+
 button {
-  color: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
 }
 
 img {
   max-width: 100%;
 }
 
+::selection {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+:focus-visible {
+  outline-color: var(--focus-color);
+}
+
 .header,
 .app-navigation,
 .pokedex,
 .resource-directory,
+.directory-panel,
+.route-directory,
 .section-card,
 .detail-card,
 .pokemon-details,
+.pokemon-profile,
 .pokemon-moves,
+.team-builder,
+.team-slot,
 .empty-state,
 .empty-detail {
   border-color: var(--legacy-border) !important;
   border-radius: 4px !important;
-  background: var(--legacy-surface) !important;
+  color: var(--legacy-text);
   box-shadow: 0 2px 5px var(--legacy-shadow) !important;
-  backdrop-filter: none !important;
-}
-
-.header {
-  border-bottom-color: var(--legacy-border) !important;
-  background: var(--legacy-page) !important;
 }
 
 .brand-icon,
 .navigation-icon,
 .search-input,
 .language-select,
+.sprite-select,
 .shiny-button,
-.cache-status,
+.theme-button,
 .pagination,
 .pagination button,
 .retry-button,
 .error-message button,
 .facts-grid > div,
+.fact-card,
 .descriptions,
+.description-card,
 .resource-button,
 .pokemon-button,
 .evolution-item,
-.special-form-item {
+.evolution-card,
+.holder-card,
+.game-group,
+.availability-panel,
+.secondary-section,
+.location-indexes,
+.area-card,
+.encounter-card {
   border-color: var(--legacy-border) !important;
   border-radius: 4px !important;
 }
 
-.brand-icon,
-.navigation-icon,
-.search-input,
-.language-select,
-.shiny-button,
-.cache-status,
-.pagination,
-.pagination button,
-.retry-button,
-.error-message button,
-.facts-grid > div,
-.descriptions,
-.evolution-item {
-  color: var(--legacy-text) !important;
-  background: var(--legacy-page) !important;
-}
-
 .brand-copy strong,
 .navigation-copy strong,
+.section-card h1,
 .section-card h2,
 .directory-heading h1,
+.route-heading h1,
 .list-heading h1,
 .empty-state h1,
 .empty-detail h2,
 .detail-header h2,
 .facts-grid dd,
+.fact-value,
 .section-heading h3,
-.secondary-section h3 {
+.secondary-section h3,
+.panel-header h3,
+.location-header h2,
+.area-heading h3 {
   color: var(--legacy-text) !important;
 }
 
@@ -127,6 +171,7 @@ img {
 .section-card p,
 .request-note,
 .directory-description,
+.route-description,
 .result-count,
 .resource-number,
 .pagination span,
@@ -135,28 +180,74 @@ img {
 .empty-detail p,
 .empty-detail small,
 .facts-grid dt,
-.secondary-section p {
+.fact-label,
+.secondary-section p,
+.panel-intro,
+.panel-status,
+.panel-empty,
+.location-header span,
+.area-empty {
   color: var(--legacy-muted) !important;
 }
 
-.list-eyebrow,
-.resource-directory .eyebrow,
-.section-kicker {
+.search-input,
+.language-select,
+.sprite-select,
+.shiny-button,
+.theme-button,
+.pagination,
+.pagination button,
+.retry-button,
+.error-message button,
+.facts-grid > div,
+.fact-card,
+.descriptions,
+.description,
+.secondary-section,
+.evolution-item,
+.evolution-card,
+.holder-card,
+.game-group,
+.availability-panel,
+.availability-note,
+.location-indexes,
+.area-card,
+.encounter-card,
+textarea {
   color: var(--legacy-text) !important;
+  background: var(--legacy-page) !important;
+}
+
+input,
+select,
+textarea {
+  border-color: var(--legacy-border) !important;
+  color: var(--legacy-text) !important;
+  background: var(--legacy-page) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--legacy-muted);
+  opacity: 0.8;
 }
 
 .navigation-link,
 .pokemon-button,
-.resource-button {
+.resource-button,
+.route-button {
   color: var(--legacy-text) !important;
 }
 
 .navigation-link:hover,
 .pokemon-button:hover,
-.resource-button:hover,
+.resource-button:hover:not(.move),
+.route-button:hover,
 .search-input:hover,
 .language-select:hover,
+.sprite-select:hover,
 .shiny-button:hover,
+.theme-button:hover,
 .pagination button:hover:not(:disabled) {
   border-color: var(--legacy-border-strong) !important;
   color: var(--legacy-text) !important;
@@ -165,44 +256,39 @@ img {
 
 .navigation-link.is-active,
 .pokemon-button.is-active,
-.resource-button.is-selected,
-.shiny-button.is-active {
+.resource-button.selected:not(.move),
+.resource-button.is-selected:not(.is-move),
+.route-button.selected,
+.shiny-button.is-active,
+.theme-button.is-active {
   border-color: var(--legacy-border-strong) !important;
   color: var(--legacy-text) !important;
   background: var(--legacy-surface-active) !important;
-  box-shadow: inset 4px 0 0 #888888 !important;
 }
 
-.navigation-link.is-active .navigation-icon {
-  border-color: var(--legacy-border-strong) !important;
-  background: var(--legacy-page) !important;
-  box-shadow: none !important;
+.navigation-link.is-active,
+.pokemon-button.is-active,
+.resource-button.selected,
+.resource-button.is-selected,
+.route-button.selected {
+  box-shadow: inset 4px 0 0 #888888 !important;
 }
 
 .search-input:focus,
 .language-select:focus-visible,
+.sprite-select:focus-visible,
 .shiny-button:focus-visible,
+.theme-button:focus-visible,
 .navigation-link:focus-visible,
 .pokemon-button:focus-visible,
 .resource-button:focus-visible,
+.route-button:focus-visible,
 .section-card:focus-visible,
 .brand:focus-visible {
-  border-color: #888888 !important;
-  outline: 2px solid #888888 !important;
+  border-color: var(--focus-color) !important;
+  outline: 2px solid var(--focus-color) !important;
   outline-offset: 2px !important;
   box-shadow: none !important;
-}
-
-.section-symbol,
-.empty-symbol {
-  color: var(--legacy-text) !important;
-  background: var(--legacy-surface-active) !important;
-  box-shadow: 0 2px 5px var(--legacy-shadow) !important;
-}
-
-.section-card:hover {
-  border-color: var(--legacy-border-strong) !important;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2) !important;
 }
 
 .cache-status span,
@@ -212,20 +298,127 @@ img {
   color: var(--legacy-muted) !important;
 }
 
-.pokemon-button:hover .selection-arrow,
-.pokemon-button.is-active .selection-arrow {
-  color: var(--legacy-text) !important;
-}
-
 .pokemon-button,
-.resource-button {
+.resource-button,
+.route-button,
+.navigation-link {
   touch-action: manipulation;
 }
 
 .resource-directory,
+.directory-panel,
+.route-directory,
 .pokedex,
 .pokemon-moves {
   overflow: hidden;
+}
+
+.dark .header {
+  background: color-mix(in srgb, var(--legacy-page) 94%, transparent) !important;
+}
+
+.dark .detail-card,
+.dark .pokemon-details,
+.dark .pokemon-profile,
+.dark .pokemon-moves,
+.dark .section-card,
+.dark .empty-state,
+.dark .empty-detail,
+.dark .resource-directory,
+.dark .directory-panel,
+.dark .route-directory,
+.dark .team-slot,
+.dark .team-header,
+.dark .team-overview article,
+.dark .calculator-card,
+.dark .capture-card {
+  color: var(--legacy-text) !important;
+  background: var(--legacy-surface) !important;
+}
+
+.dark .detail-header,
+.dark .list-heading,
+.dark .directory-heading,
+.dark .route-heading,
+.dark .move-heading,
+.dark .slot-header,
+.dark .location-header,
+.dark .game-filter-section {
+  color: var(--legacy-text) !important;
+  background: var(--legacy-page) !important;
+}
+
+.dark .detail-header h2,
+.dark .detail-header h3,
+.dark .detail-header strong,
+.dark .detail-header p,
+.dark .detail-header span:not(.type-badge),
+.dark .sprite-frame,
+.dark .sprite-frame span,
+.dark .panel-header,
+.dark .holder-card h4,
+.dark .game-group h4,
+.dark .availability-note strong {
+  color: var(--legacy-text) !important;
+}
+
+.dark .detail-card .badge-row span,
+.dark .form-kind,
+.dark .classification-list span,
+.dark .status-chip,
+.dark .learn-chip {
+  border-color: var(--legacy-border-strong) !important;
+  color: var(--legacy-text) !important;
+  background: color-mix(in srgb, var(--legacy-page) 75%, transparent) !important;
+}
+
+.dark .sprite-frame,
+.dark .sprite-frame img,
+.dark .sprite-frame::before,
+.dark .sprite-frame::after,
+.dark .profile-sprite-frame {
+  border-color: var(--legacy-border) !important;
+}
+
+.dark .description {
+  border-left-color: var(--focus-color) !important;
+}
+
+.dark .panel-error,
+.dark .error-message,
+.dark .slot-error {
+  color: var(--danger-color) !important;
+}
+
+.dark .result-value.increased {
+  color: var(--success-color) !important;
+}
+
+.dark .result-value.decreased,
+.dark .calculator-summary.invalid,
+.dark .ev-summary.invalid {
+  color: var(--danger-color) !important;
+}
+
+.dark .type-badge,
+.dark .compact-type-list span,
+.dark .slot-types span,
+.dark .variant-card,
+.dark .special-origin,
+.dark .special-card {
+  color: #222222 !important;
+}
+
+.dark .move-item,
+.dark .resource-button.move {
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.dark .pokemon-list,
+.dark .resource-list,
+.dark .route-list,
+.dark .move-list {
+  scrollbar-color: var(--legacy-border-strong) transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
