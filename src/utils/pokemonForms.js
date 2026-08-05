@@ -1,4 +1,4 @@
-import { getMegaStone } from '@/utils/megaStones';
+import { getMegaStone } from './megaStones.js';
 
 const MEGA_FORM_PATTERN = /-mega(?:-[a-z0-9]+)*$/;
 const GIGANTAMAX_FORM_PATTERN = /-gmax$/;
