@@ -2,27 +2,27 @@
   <section class="pokedex" aria-labelledby="pokemon-list-title">
     <div class="list-heading">
       <div>
-        <p class="list-eyebrow">National index</p>
-        <h1 id="pokemon-list-title">Pokémon</h1>
+        <p class="list-eyebrow">{{ t('pokedex.kicker') }}</p>
+        <h1 id="pokemon-list-title">{{ t('pokedex.title') }}</h1>
       </div>
-      <span v-if="!loading && !error" class="result-count">
-        {{ filteredPokemons.length }} results
+      <span v-if="!loading && !hasError" class="result-count">
+        {{ t('common.results', { count: filteredPokemons.length }) }}
       </span>
     </div>
 
     <p v-if="loading" class="status-message" role="status">
-      Loading Pokémon…
+      {{ t('pokedex.loading') }}
     </p>
 
-    <div v-else-if="error" class="error" role="alert">
-      <p>{{ error }}</p>
+    <div v-else-if="hasError" class="error" role="alert">
+      <p>{{ t('pokedex.loadError') }}</p>
       <button type="button" class="retry-button" @click="fetchPokemons">
-        Try again
+        {{ t('common.tryAgain') }}
       </button>
     </div>
 
     <p v-else-if="filteredPokemons.length === 0" class="status-message">
-      No Pokémon match your search.
+      {{ t('pokedex.noMatches') }}
     </p>
 
     <ul v-else class="pokemon-list">
@@ -32,7 +32,10 @@
           class="pokemon-button"
           :class="{ 'is-active': pokemon.id === selectedPokemonId }"
           :aria-current="pokemon.id === selectedPokemonId ? 'true' : undefined"
-          :aria-label="`Open ${formatPokemonName(pokemon.name)}, Pokédex number ${pokemon.id}`"
+          :aria-label="t('pokedex.openLabel', {
+            name: formatPokemonName(pokemon.name),
+            id: pokemon.id,
+          })"
           @click="selectPokemon(pokemon)"
         >
           <span class="sprite-frame" aria-hidden="true">
@@ -58,7 +61,9 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
+import { isNumberedPokedexPokemon } from '@/utils/pokemonForms';
 
 const props = defineProps({
   searchQuery: {
@@ -72,10 +77,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['select']);
+const { t } = useI18n();
 
 const pokemons = ref([]);
 const loading = ref(true);
-const error = ref('');
+const hasError = ref(false);
 
 const getPokemonId = (url) => {
   const match = url.match(/\/pokemon\/(\d+)\/?$/);
@@ -93,7 +99,7 @@ const formatPokemonName = (name) => {
 
 const fetchPokemons = async () => {
   loading.value = true;
-  error.value = '';
+  hasError.value = false;
 
   try {
     const response = await PokeAPI.getPokemons();
@@ -111,11 +117,11 @@ const fetchPokemons = async () => {
           image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`,
         };
       })
-      .filter(Boolean)
+      .filter((pokemon) => pokemon && isNumberedPokedexPokemon(pokemon))
       .sort((firstPokemon, secondPokemon) => firstPokemon.id - secondPokemon.id);
   } catch (requestError) {
     console.error('Failed to load Pokémon:', requestError);
-    error.value = 'The Pokémon list could not be loaded.';
+    hasError.value = true;
   } finally {
     loading.value = false;
   }
