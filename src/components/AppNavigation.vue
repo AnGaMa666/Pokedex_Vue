@@ -1,5 +1,5 @@
 <template>
-  <nav class="app-navigation" aria-label="Explorer sections">
+  <nav class="app-navigation" :aria-label="t('navigation.aria')">
     <a
       v-for="item in navigationItems"
       :key="item.id"
@@ -18,6 +18,9 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
+import { useI18n } from '@/i18n';
+
 defineProps({
   activeSection: {
     type: String,
@@ -25,38 +28,40 @@ defineProps({
   },
 });
 
-const navigationItems = [
+const { t } = useI18n();
+
+const navigationItems = computed(() => [
   {
     id: 'home',
-    label: 'Overview',
-    description: 'All explorer areas',
+    label: t('navigation.home.label'),
+    description: t('navigation.home.description'),
     icon: 'home',
   },
   {
     id: 'pokedex',
-    label: 'Pokédex',
-    description: 'Pokémon profiles',
+    label: t('navigation.pokedex.label'),
+    description: t('navigation.pokedex.description'),
     icon: 'pokedex',
   },
   {
     id: 'moves',
-    label: 'Moves',
-    description: 'Battle techniques',
+    label: t('navigation.moves.label'),
+    description: t('navigation.moves.description'),
     icon: 'moves',
   },
   {
     id: 'items',
-    label: 'Items',
-    description: 'Bag and held items',
+    label: t('navigation.items.label'),
+    description: t('navigation.items.description'),
     icon: 'items',
   },
   {
     id: 'berries',
-    label: 'Berries',
-    description: 'Growth and flavors',
+    label: t('navigation.berries.label'),
+    description: t('navigation.berries.description'),
     icon: 'berries',
   },
-];
+]);
 </script>
 
 <style scoped>
@@ -145,7 +150,7 @@ const navigationItems = [
 
 .navigation-icon[data-icon='berries']::before {
   content: '●';
-  color: #c026d3;
+  color: mediumorchid;
 }
 
 .navigation-link.is-active .navigation-icon {

@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build production application
+    name: Test and build production application
     runs-on: ubuntu-latest
 
     steps:
@@ -29,6 +29,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Run unit tests
+        run: npm test
 
       - name: Build application
         run: npm run build

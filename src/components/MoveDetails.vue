@@ -209,7 +209,8 @@ watch(
 }
 
 .type-badge {
-  color: #ffffff;
+  border: 1px solid rgba(23, 32, 51, 0.14);
+  color: #172033;
   background: var(--resource-color);
 }
 
@@ -224,9 +225,9 @@ watch(
   width: 92px;
   height: 92px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--resource-color) 38%, #ffffff);
+  border: 1px solid color-mix(in srgb, var(--resource-color) 38%, #172033);
   border-radius: 26px;
-  color: #ffffff;
+  color: #172033;
   font-size: 2.2rem;
   background: var(--resource-color);
   box-shadow: 0 16px 30px color-mix(in srgb, var(--resource-color) 24%, transparent);

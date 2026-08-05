@@ -5,18 +5,18 @@
     :aria-busy="loading"
   >
     <p v-if="loading" class="status-message" role="status">
-      Loading Pokémon details…
+      {{ t('pokemon.loading') }}
     </p>
 
-    <p v-else-if="errorMessage" class="error-message" role="alert">
-      {{ errorMessage }}
+    <p v-else-if="hasError" class="error-message" role="alert">
+      {{ t('pokemon.loadError') }}
     </p>
 
     <template v-else-if="pokemonDetails">
       <header class="details-header">
         <div>
           <p class="eyebrow">#{{ formatResourceId(pokemonDetails.id) }}</p>
-          <h2>{{ formatResourceName(pokemonDetails.name) }}</h2>
+          <h2>{{ displayName }}</h2>
           <div class="type-list" aria-label="Pokémon types">
             <span
               v-for="typeEntry in pokemonDetails.types"
@@ -32,7 +32,7 @@
           <img
             v-if="spriteUrl"
             :src="spriteUrl"
-            :alt="`${formatResourceName(pokemonDetails.name)} ${isShiny ? 'shiny' : 'normal'} sprite`"
+            :alt="`${displayName} ${isShiny ? 'shiny' : 'normal'} sprite`"
             width="180"
             height="180"
           >
@@ -40,57 +40,59 @@
       </header>
 
       <div v-if="species" class="descriptions">
-        <p>{{ getFlavorText(species.flavor_text_entries, 'de') }}</p>
-        <p lang="en">{{ getFlavorText(species.flavor_text_entries, 'en') }}</p>
+        <p :lang="language">{{ getFlavorText(species.flavor_text_entries) }}</p>
       </div>
 
       <dl class="facts-grid">
         <div>
-          <dt>Height</dt>
+          <dt>{{ t('pokemon.height') }}</dt>
           <dd>{{ pokemonDetails.height / 10 }} m</dd>
         </div>
         <div>
-          <dt>Weight</dt>
+          <dt>{{ t('pokemon.weight') }}</dt>
           <dd>{{ pokemonDetails.weight / 10 }} kg</dd>
         </div>
         <div>
-          <dt>Base experience</dt>
-          <dd>{{ pokemonDetails.base_experience ?? 'Unknown' }}</dd>
+          <dt>{{ t('pokemon.baseExperience') }}</dt>
+          <dd>{{ pokemonDetails.base_experience ?? t('common.unknown') }}</dd>
         </div>
         <div>
-          <dt>Abilities</dt>
+          <dt>{{ t('pokemon.abilities') }}</dt>
           <dd>{{ formatAbilities(pokemonDetails.abilities) }}</dd>
         </div>
         <div>
-          <dt>Weaknesses</dt>
+          <dt>{{ t('pokemon.weaknesses') }}</dt>
           <dd>{{ formatList(damageRelations.weaknesses) }}</dd>
         </div>
         <div>
-          <dt>Resistances</dt>
+          <dt>{{ t('pokemon.resistances') }}</dt>
           <dd>{{ formatList(damageRelations.resistances) }}</dd>
         </div>
         <div>
-          <dt>Immunities</dt>
+          <dt>{{ t('pokemon.immunities') }}</dt>
           <dd>{{ formatList(damageRelations.immunities) }}</dd>
         </div>
         <div>
-          <dt>Effective against</dt>
+          <dt>{{ t('pokemon.effectiveAgainst') }}</dt>
           <dd>{{ formatList(damageRelations.effectiveAgainst) }}</dd>
         </div>
       </dl>
 
-      <section v-if="evolutionStages.length" class="evolution-section">
+      <section v-if="evolutionStages.length || specialForms.length" class="evolution-section">
         <div class="section-heading">
-          <h3>Evolution chain</h3>
-          <span>Sprites are derived from existing resource IDs</span>
+          <h3>{{ t('pokemon.evolutionChain') }}</h3>
+          <span>{{ t('pokemon.evolutionNote') }}</span>
         </div>
-        <div class="evolution-stages">
+
+        <div v-if="evolutionStages.length" class="evolution-stages">
           <div
             v-for="(stage, stageIndex) in evolutionStages"
             :key="stageIndex"
             class="evolution-stage-group"
           >
-            <span class="stage-label">Stage {{ stageIndex + 1 }}</span>
+            <span class="stage-label">
+              {{ t('pokemon.stage', { stage: stageIndex + 1 }) }}
+            </span>
             <ul class="evolution-stage-list">
               <li
                 v-for="evolution in stage"
@@ -120,6 +122,28 @@
             </span>
           </div>
         </div>
+
+        <div v-if="specialForms.length" class="special-forms">
+          <div class="special-forms-heading">
+            <h4>{{ t('pokemon.specialForms') }}</h4>
+            <p>{{ t('pokemon.specialFormsNote') }}</p>
+          </div>
+          <ul class="special-form-list">
+            <li v-for="form in specialForms" :key="form.id" class="special-form-item">
+              <span class="form-kind">
+                {{ form.kind === 'mega' ? t('pokemon.megaForm') : t('pokemon.gmaxForm') }}
+              </span>
+              <img
+                :src="getSpecialFormSprite(form)"
+                :alt="`${formatResourceName(form.name)} sprite`"
+                width="112"
+                height="112"
+                loading="lazy"
+              >
+              <strong>{{ formatResourceName(form.name) }}</strong>
+            </li>
+          </ul>
+        </div>
       </section>
     </template>
   </article>
@@ -127,10 +151,13 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
+import { getSpecialBattleForms } from '@/utils/pokemonForms';
 import {
   formatResourceId,
   formatResourceName,
+  getLocalizedName,
   getResourceId,
 } from '@/utils/resource';
 import { getTypeColor, getTypeGradient } from '@/utils/typeColors';
@@ -147,6 +174,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['detailsLoaded']);
+const { language, t } = useI18n();
 
 const emptyDamageRelations = () => ({
   immunities: [],
@@ -160,8 +188,16 @@ const species = ref(null);
 const evolutionChain = ref([]);
 const damageRelations = ref(emptyDamageRelations());
 const loading = ref(false);
-const errorMessage = ref('');
+const hasError = ref(false);
 let activeRequestId = 0;
+
+const displayName = computed(() => {
+  return getLocalizedName(
+    species.value?.names,
+    pokemonDetails.value?.name,
+    language.value,
+  );
+});
 
 const spriteUrl = computed(() => {
   if (!pokemonDetails.value) {
@@ -200,9 +236,17 @@ const evolutionStages = computed(() => {
   return groupedStages.filter(Boolean);
 });
 
+const specialForms = computed(() => {
+  return getSpecialBattleForms(species.value?.varieties || []);
+});
+
+const getSpecialFormSprite = (form) => {
+  return props.isShiny ? form.shinySprite : form.sprite;
+};
+
 const formatList = (values) => {
   if (!values.length) {
-    return 'None';
+    return t('common.none');
   }
 
   return values.map(formatResourceName).join(', ');
@@ -212,21 +256,19 @@ const formatAbilities = (abilities) => {
   return abilities
     .map((abilityEntry) => {
       const abilityName = formatResourceName(abilityEntry.ability.name);
-      return abilityEntry.is_hidden ? `${abilityName} (hidden)` : abilityName;
+      return abilityEntry.is_hidden
+        ? `${abilityName} (${t('pokemon.hidden')})`
+        : abilityName;
     })
     .join(', ');
 };
 
-const getFlavorText = (entries, language) => {
-  const entry = entries.find((candidate) => candidate.language.name === language);
+const getFlavorText = (entries) => {
+  const entry = entries.find((candidate) => candidate.language.name === language.value)
+    || entries.find((candidate) => candidate.language.name === 'en');
 
-  if (!entry) {
-    return language === 'de'
-      ? 'Keine Beschreibung verfügbar.'
-      : 'No description available.';
-  }
-
-  return entry.flavor_text.replace(/[\n\f]+/g, ' ');
+  return entry?.flavor_text?.replace(/[\n\f]+/g, ' ')
+    || t('pokemon.noDescription');
 };
 
 const formatEvolutionMethod = (evolutionDetails = []) => {
@@ -240,65 +282,81 @@ const formatEvolutionMethod = (evolutionDetails = []) => {
   const trigger = detail.trigger?.name;
 
   if (trigger === 'level-up') {
-    parts.push(detail.min_level ? `Level ${detail.min_level}` : 'Level up');
+    parts.push(detail.min_level ? `Level ${detail.min_level}` : t('pokemon.levelUp'));
   } else if (trigger === 'use-item') {
-    parts.push(`Use ${formatResourceName(detail.item?.name || 'item')}`);
+    parts.push(t('pokemon.useItem', {
+      item: formatResourceName(detail.item?.name || 'item'),
+    }));
   } else if (trigger === 'trade') {
-    parts.push('Trade');
+    parts.push(t('pokemon.trade'));
   } else if (trigger) {
     parts.push(formatResourceName(trigger));
   }
 
   if (detail.held_item) {
-    parts.push(`holding ${formatResourceName(detail.held_item.name)}`);
+    parts.push(t('pokemon.holding', {
+      item: formatResourceName(detail.held_item.name),
+    }));
   }
 
   if (detail.min_happiness) {
-    parts.push(`${detail.min_happiness}+ happiness`);
+    parts.push(t('pokemon.happiness', { value: detail.min_happiness }));
   }
 
   if (detail.min_affection) {
-    parts.push(`${detail.min_affection}+ affection`);
+    parts.push(t('pokemon.affection', { value: detail.min_affection }));
   }
 
   if (detail.min_beauty) {
-    parts.push(`${detail.min_beauty}+ beauty`);
+    parts.push(t('pokemon.beauty', { value: detail.min_beauty }));
   }
 
   if (detail.time_of_day) {
-    parts.push(`during ${detail.time_of_day}`);
+    parts.push(t('pokemon.during', { value: detail.time_of_day }));
   }
 
   if (detail.known_move) {
-    parts.push(`knowing ${formatResourceName(detail.known_move.name)}`);
+    parts.push(t('pokemon.knowingMove', {
+      move: formatResourceName(detail.known_move.name),
+    }));
   }
 
   if (detail.known_move_type) {
-    parts.push(`knowing a ${formatResourceName(detail.known_move_type.name)} move`);
+    parts.push(t('pokemon.knowingType', {
+      type: formatResourceName(detail.known_move_type.name),
+    }));
   }
 
   if (detail.location) {
-    parts.push(`at ${formatResourceName(detail.location.name)}`);
+    parts.push(t('pokemon.atLocation', {
+      location: formatResourceName(detail.location.name),
+    }));
   }
 
   if (detail.needs_overworld_rain) {
-    parts.push('while raining');
+    parts.push(t('pokemon.raining'));
   }
 
   if (detail.turn_upside_down) {
-    parts.push('with the device upside down');
+    parts.push(t('pokemon.upsideDown'));
   }
 
   if (detail.party_species) {
-    parts.push(`with ${formatResourceName(detail.party_species.name)} in the party`);
+    parts.push(t('pokemon.partySpecies', {
+      species: formatResourceName(detail.party_species.name),
+    }));
   }
 
   if (detail.party_type) {
-    parts.push(`with a ${formatResourceName(detail.party_type.name)} Pokémon in the party`);
+    parts.push(t('pokemon.partyType', {
+      type: formatResourceName(detail.party_type.name),
+    }));
   }
 
   if (detail.trade_species) {
-    parts.push(`for ${formatResourceName(detail.trade_species.name)}`);
+    parts.push(t('pokemon.tradeSpecies', {
+      species: formatResourceName(detail.trade_species.name),
+    }));
   }
 
   return parts.join(' · ');
@@ -340,7 +398,7 @@ const fetchPokemonDetails = async (name) => {
   }
 
   loading.value = true;
-  errorMessage.value = '';
+  hasError.value = false;
   pokemonDetails.value = null;
   species.value = null;
   evolutionChain.value = [];
@@ -397,7 +455,7 @@ const fetchPokemonDetails = async (name) => {
     }
 
     console.error('Failed to load Pokémon details:', requestError);
-    errorMessage.value = 'The Pokémon details could not be loaded.';
+    hasError.value = true;
     emit('detailsLoaded', null);
   } finally {
     if (requestId === activeRequestId) {
@@ -419,10 +477,10 @@ watch(
 .pokemon-details {
   min-width: 0;
   padding: clamp(22px, 4vw, 34px);
-  border: 1px solid color-mix(in srgb, var(--pokemon-primary, #64748b) 34%, #d5d9e1);
+  border: 1px solid color-mix(in srgb, var(--pokemon-primary, lightgray) 44%, #d5d9e1);
   border-radius: 22px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--pokemon-primary, #64748b) 10%, #ffffff), #ffffff 300px);
+    linear-gradient(180deg, color-mix(in srgb, var(--pokemon-primary, lightgray) 24%, #ffffff), #ffffff 300px);
   box-shadow: 0 16px 42px rgba(23, 32, 51, 0.08);
 }
 
@@ -444,10 +502,11 @@ watch(
   align-items: center;
   overflow: hidden;
   padding: clamp(20px, 4vw, 34px);
+  border: 1px solid rgba(23, 32, 51, 0.12);
   border-radius: 20px;
-  color: #ffffff;
-  background: var(--pokemon-gradient, linear-gradient(135deg, #64748b, #334155));
-  box-shadow: 0 18px 34px color-mix(in srgb, var(--pokemon-primary, #64748b) 22%, transparent);
+  color: #172033;
+  background: var(--pokemon-gradient, linear-gradient(135deg, lightgray, #ffffff));
+  box-shadow: 0 18px 34px color-mix(in srgb, var(--pokemon-primary, lightgray) 30%, transparent);
 }
 
 .details-header::after {
@@ -456,7 +515,7 @@ watch(
   bottom: -104px;
   width: 240px;
   height: 240px;
-  border: 42px solid rgba(255, 255, 255, 0.12);
+  border: 42px solid rgba(255, 255, 255, 0.28);
   border-radius: 50%;
   content: '';
 }
@@ -471,12 +530,12 @@ watch(
   font-size: clamp(2.2rem, 6vw, 4.5rem);
   line-height: 0.95;
   letter-spacing: -0.045em;
-  text-shadow: 0 3px 16px rgba(23, 32, 51, 0.2);
+  text-shadow: 0 2px 12px rgba(255, 255, 255, 0.45);
 }
 
 .eyebrow {
   margin: 0 0 10px;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(23, 32, 51, 0.72);
   font-weight: 900;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -488,10 +547,10 @@ watch(
   width: clamp(140px, 18vw, 210px);
   aspect-ratio: 1;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(23, 32, 51, 0.14);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
-  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(8px);
 }
 
@@ -500,7 +559,7 @@ watch(
   height: 90%;
   object-fit: contain;
   image-rendering: pixelated;
-  filter: drop-shadow(0 16px 18px rgba(23, 32, 51, 0.24));
+  filter: drop-shadow(0 16px 18px rgba(23, 32, 51, 0.18));
 }
 
 .type-list {
@@ -512,18 +571,18 @@ watch(
 
 .type-badge {
   padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(23, 32, 51, 0.16);
   border-radius: 999px;
-  color: #ffffff;
+  color: #172033;
   font-size: 0.82rem;
   font-weight: 900;
-  box-shadow: 0 6px 14px rgba(23, 32, 51, 0.14);
+  box-shadow: 0 6px 14px rgba(23, 32, 51, 0.1);
 }
 
 .descriptions {
   margin-top: 24px;
   padding: 18px;
-  border-left: 4px solid var(--pokemon-primary, #dc2626);
+  border-left: 4px solid var(--pokemon-primary, lightgray);
   border-radius: 10px;
   background: #f8fafc;
 }
@@ -531,11 +590,6 @@ watch(
 .descriptions p {
   margin: 0;
   line-height: 1.6;
-}
-
-.descriptions p + p {
-  margin-top: 10px;
-  color: #596579;
 }
 
 .facts-grid {
@@ -614,7 +668,8 @@ watch(
   text-transform: uppercase;
 }
 
-.evolution-stage-list {
+.evolution-stage-list,
+.special-form-list {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -625,7 +680,8 @@ watch(
   list-style: none;
 }
 
-.evolution-item {
+.evolution-item,
+.special-form-item {
   display: grid;
   flex: 1 1 150px;
   max-width: 220px;
@@ -637,14 +693,21 @@ watch(
   background: #fbfcfe;
 }
 
-.evolution-item img {
+.evolution-item img,
+.special-form-item img {
   width: 96px;
   height: 96px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
-.evolution-item strong {
+.special-form-item img {
+  width: 112px;
+  height: 112px;
+}
+
+.evolution-item strong,
+.special-form-item strong {
   color: #172033;
 }
 
@@ -657,9 +720,42 @@ watch(
 
 .stage-arrow {
   margin: 6px 0;
-  color: var(--pokemon-primary, #64748b);
+  color: color-mix(in srgb, var(--pokemon-primary, lightgray) 65%, #172033);
   font-size: 1.5rem;
   font-weight: 900;
+}
+
+.special-forms {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px dashed #c8ced8;
+}
+
+.special-forms-heading {
+  margin-bottom: 14px;
+}
+
+.special-forms-heading h4 {
+  margin: 0;
+  color: #172033;
+  font-size: 1rem;
+}
+
+.special-forms-heading p {
+  margin: 6px 0 0;
+  color: #687386;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.form-kind {
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--pokemon-primary, lightgray) 60%, #c8ced8);
+  border-radius: 999px;
+  color: #344054;
+  font-size: 0.7rem;
+  font-weight: 900;
+  background: color-mix(in srgb, var(--pokemon-primary, lightgray) 28%, #ffffff);
 }
 
 @media (max-width: 620px) {

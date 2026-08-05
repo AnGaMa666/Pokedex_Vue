@@ -1,6 +1,6 @@
 <template>
   <header class="header" :class="{ 'without-search': !showSearch }">
-    <a class="brand" href="#home" aria-label="Open Pokémon Explorer overview">
+    <a class="brand" href="#home" :aria-label="t('header.openOverview')">
       <span class="brand-icon" aria-hidden="true">
         <img
           src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
@@ -10,7 +10,7 @@
         >
       </span>
       <span class="brand-copy">
-        <strong>Pokémon Explorer</strong>
+        <strong>{{ t('header.brand') }}</strong>
         <small>{{ sectionLabel }}</small>
       </span>
     </a>
@@ -30,6 +30,19 @@
     </label>
 
     <div class="header-actions">
+      <label class="language-field">
+        <span class="visually-hidden">{{ t('header.language') }}</span>
+        <select
+          :value="language"
+          class="language-select"
+          :aria-label="t('header.language')"
+          @change="setLanguage($event.target.value)"
+        >
+          <option value="de">{{ t('header.german') }}</option>
+          <option value="en">{{ t('header.english') }}</option>
+        </select>
+      </label>
+
       <button
         v-if="showShiny"
         type="button"
@@ -39,17 +52,19 @@
         @click="emit('toggleShiny')"
       >
         <span class="shiny-spark" aria-hidden="true">✦</span>
-        <span>{{ isShiny ? 'Shiny sprites on' : 'Shiny sprites off' }}</span>
+        <span>{{ isShiny ? t('header.shinyOn') : t('header.shinyOff') }}</span>
       </button>
-      <span v-else class="cache-status" title="Lists and details are cached in this browser session">
+      <span v-else class="cache-status" :title="t('header.cacheTitle')">
         <span aria-hidden="true">↻</span>
-        Session cache
+        {{ t('header.sessionCache') }}
       </span>
     </div>
   </header>
 </template>
 
 <script setup>
+import { useI18n } from '@/i18n';
+
 defineProps({
   searchQuery: {
     type: String,
@@ -85,6 +100,8 @@ const emit = defineEmits([
   'updateSearchQuery',
   'toggleShiny',
 ]);
+
+const { language, setLanguage, t } = useI18n();
 </script>
 
 <style scoped>
@@ -222,7 +239,31 @@ const emit = defineEmits([
 
 .header-actions {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.language-select {
+  min-height: 42px;
+  padding: 8px 34px 8px 12px;
+  border: 1px solid #b9c0cc;
+  border-radius: 12px;
+  color: #344054;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  background: #f8fafc;
+}
+
+.language-select:hover {
+  background: #ffffff;
+}
+
+.language-select:focus-visible {
+  outline: 3px solid rgba(220, 38, 38, 0.22);
+  outline-offset: 2px;
 }
 
 .shiny-button {
@@ -300,16 +341,10 @@ const emit = defineEmits([
   border: 0;
 }
 
-@media (max-width: 900px) {
-  .brand-copy small {
-    display: none;
-  }
-
+@media (max-width: 1080px) {
+  .brand-copy small,
   .cache-status {
-    width: 42px;
-    justify-content: center;
-    padding: 0;
-    font-size: 0;
+    display: none;
   }
 }
 
@@ -326,13 +361,22 @@ const emit = defineEmits([
     grid-row: 2;
   }
 
+  .header-actions {
+    gap: 6px;
+  }
+
+  .language-select {
+    min-height: 42px;
+    padding-right: 28px;
+  }
+
   .shiny-button {
     padding-inline: 12px;
     font-size: 0.825rem;
   }
 }
 
-@media (max-width: 460px) {
+@media (max-width: 500px) {
   .brand-icon {
     width: 42px;
     height: 42px;
@@ -345,6 +389,11 @@ const emit = defineEmits([
 
   .brand-copy strong {
     font-size: 0.98rem;
+  }
+
+  .language-select {
+    width: 64px;
+    padding-inline: 8px;
   }
 
   .shiny-button span:last-child {

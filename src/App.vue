@@ -38,9 +38,9 @@
             <div v-else-if="!selectedPokemon" class="empty-state">
               <span class="empty-state-mark" aria-hidden="true"></span>
               <div>
-                <h1>Choose a Pokémon</h1>
-                <p>Select an entry from the Pokédex to explore its profile, evolution chain and moves.</p>
-                <small>The list uses one cached API request. Detail resources are loaded only after selection.</small>
+                <h1>{{ t('pokedex.chooseTitle') }}</h1>
+                <p>{{ t('pokedex.chooseText') }}</p>
+                <small>{{ t('pokedex.chooseNote') }}</small>
               </div>
             </div>
           </section>
@@ -65,6 +65,7 @@ import {
   reactive,
   ref,
 } from 'vue';
+import { useI18n } from '@/i18n';
 import AppNavigation from './components/AppNavigation.vue';
 import Header from './components/Header.vue';
 import HomePage from './components/HomePage.vue';
@@ -73,37 +74,39 @@ import PokemonDetails from './components/PokemonDetails.vue';
 import PokemonList from './components/PokemonList.vue';
 import ResourceSection from './components/ResourceSection.vue';
 
-const sectionConfigs = {
+const { t } = useI18n();
+
+const sectionConfigs = computed(() => ({
   home: {
-    label: 'Overview',
+    label: t('section.home.label'),
     searchLabel: '',
     searchPlaceholder: '',
   },
   pokedex: {
-    label: 'National Pokédex',
-    searchLabel: 'Search Pokémon',
-    searchPlaceholder: 'Search Pokémon by name or number',
+    label: t('section.pokedex.label'),
+    searchLabel: t('section.pokedex.searchLabel'),
+    searchPlaceholder: t('section.pokedex.searchPlaceholder'),
   },
   moves: {
-    label: 'Move directory',
-    searchLabel: 'Search moves',
-    searchPlaceholder: 'Search moves by name or number',
+    label: t('section.moves.label'),
+    searchLabel: t('section.moves.searchLabel'),
+    searchPlaceholder: t('section.moves.searchPlaceholder'),
   },
   items: {
-    label: 'Item directory',
-    searchLabel: 'Search items',
-    searchPlaceholder: 'Search items by name or number',
+    label: t('section.items.label'),
+    searchLabel: t('section.items.searchLabel'),
+    searchPlaceholder: t('section.items.searchPlaceholder'),
   },
   berries: {
-    label: 'Berry directory',
-    searchLabel: 'Search berries',
-    searchPlaceholder: 'Search berries by name or number',
+    label: t('section.berries.label'),
+    searchLabel: t('section.berries.searchLabel'),
+    searchPlaceholder: t('section.berries.searchPlaceholder'),
   },
-};
+}));
 
 const getSectionFromHash = () => {
   const requestedSection = window.location.hash.slice(1).split('?')[0].toLowerCase();
-  return Object.hasOwn(sectionConfigs, requestedSection) ? requestedSection : 'home';
+  return Object.hasOwn(sectionConfigs.value, requestedSection) ? requestedSection : 'home';
 };
 
 const activeSection = ref('home');
@@ -117,7 +120,7 @@ const selectedPokemon = ref(null);
 const selectedPokemonDetails = ref(null);
 const isShiny = ref(false);
 
-const activeConfig = computed(() => sectionConfigs[activeSection.value]);
+const activeConfig = computed(() => sectionConfigs.value[activeSection.value]);
 const searchQuery = computed(() => searchQueries[activeSection.value] || '');
 
 const syncSectionFromHash = () => {
