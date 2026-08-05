@@ -48,6 +48,8 @@
             <option value="number">{{ labels.number }}</option>
             <option value="name">{{ labels.name }}</option>
             <option value="category">{{ labels.category }}</option>
+            <option value="price-asc">{{ labels.priceAscending }}</option>
+            <option value="price-desc">{{ labels.priceDescending }}</option>
           </select>
         </label>
       </div>
@@ -92,10 +94,14 @@
                   {{ getLocalizedTypeName(getResourceType(resource), language) }} ·
                   {{ getDamageClassLabel(getResourceDamageClass(resource)) }}
                 </small>
-                <small v-else-if="getResourceCategory(resource)">
-                  {{ getResourceCategory(resource) }}
-                </small>
-                <small v-else>#{{ formatResourceId(resource.id) }}</small>
+                <template v-else>
+                  <small v-if="getResourceCategory(resource)">
+                    {{ getResourceCategory(resource) }}
+                  </small>
+                  <small class="purchase-price">
+                    {{ labels.purchasePrice }}: {{ formatResourceCost(resource) }}
+                  </small>
+                </template>
               </span>
 
               <span class="resource-arrow" aria-hidden="true">›</span>
@@ -213,6 +219,10 @@ const labels = computed(() => language.value === 'de'
       number: 'Nummer',
       name: 'Name A–Z',
       category: 'Kategorie',
+      purchasePrice: 'Einkaufspreis',
+      notPurchasable: 'Nicht käuflich',
+      priceAscending: 'Einkaufspreis aufsteigend',
+      priceDescending: 'Einkaufspreis absteigend',
       loading: 'Verzeichnis wird geladen…',
       loadError: 'Das Verzeichnis konnte nicht geladen werden.',
       tryAgain: 'Erneut versuchen',
@@ -234,6 +244,10 @@ const labels = computed(() => language.value === 'de'
       number: 'Number',
       name: 'Name A–Z',
       category: 'Category',
+      purchasePrice: 'Purchase price',
+      notPurchasable: 'Not purchasable',
+      priceAscending: 'Purchase price ascending',
+      priceDescending: 'Purchase price descending',
       loading: 'Loading directory…',
       loadError: 'The directory could not be loaded.',
       tryAgain: 'Try again',
@@ -262,15 +276,15 @@ const configs = computed(() => ({
     detailComponent: MoveDetails,
   },
   items: {
-    title: language.value === 'de' ? 'Items' : 'Items',
+    title: 'Items',
     singular: language.value === 'de' ? 'Item' : 'item',
     kicker: language.value === 'de' ? 'Beutel- und Trageitems' : 'Bag and held items',
     description: language.value === 'de'
-      ? 'Pokébälle, Beeren, Maschinen und einzigartige Spezialitems sind aus diesem allgemeinen Verzeichnis entfernt.'
-      : 'Poké Balls, berries, machines and unique special items are removed from this general directory.',
+      ? 'Pokébälle, Beeren, Maschinen und einzigartige Spezialitems sind aus diesem allgemeinen Verzeichnis entfernt. Einkaufspreise stehen direkt in der Liste.'
+      : 'Poké Balls, berries, machines and unique special items are removed from this general directory. Purchase prices are shown directly in the list.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt Sprite, Kategorie, Effekt, Spiele und wilde Träger.'
-      : 'The detail view shows sprite, category, effect, games and wild holders.',
+      ? 'Die Detailansicht zeigt Sprite, Einkaufspreis, Kategorie, Effekt, Spiele und wilde Träger.'
+      : 'The detail view shows sprite, purchase price, category, effect, games and wild holders.',
     symbol: '◆',
     listMethod: () => PokeAPI.getStandardItems(),
     detailMethod: (name) => PokeAPI.getItemDetails(name),
@@ -281,8 +295,8 @@ const configs = computed(() => ({
     singular: language.value === 'de' ? 'Beere' : 'berry',
     kicker: language.value === 'de' ? 'Wachstum und Aromen' : 'Growth and flavors',
     description: language.value === 'de'
-      ? 'Beeren bleiben als eigene Kategorie mit Wachstum, Ernte und Aromawerten erhalten.'
-      : 'Berries remain a dedicated category with growth, harvest and flavor values.',
+      ? 'Beeren bleiben als eigene Kategorie mit Wachstum, Ernte, Aromawerten und verfügbaren Einkaufspreisen erhalten.'
+      : 'Berries remain a dedicated category with growth, harvest, flavor values and available purchase prices.',
     emptyDescription: language.value === 'de'
       ? 'Die Detailansicht zeigt Wachstumszeit, Ertrag, Härte und Natur-Kraft-Werte.'
       : 'The detail view shows growth time, yield, firmness and Natural Gift values.',
@@ -296,11 +310,11 @@ const configs = computed(() => ({
     singular: language.value === 'de' ? 'Pokéball' : 'Poké Ball',
     kicker: language.value === 'de' ? 'Fangitems' : 'Capture items',
     description: language.value === 'de'
-      ? 'Alle Pokéball-Kategorien werden zusammengeführt und mit ihrem offiziellen Sprite angezeigt.'
-      : 'All Poké Ball categories are combined and shown with their official sprites.',
+      ? 'Alle Pokéball-Kategorien werden zusammengeführt. Sprite und Einkaufspreis werden direkt angezeigt.'
+      : 'All Poké Ball categories are combined. Sprite and purchase price are shown directly.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt Preis, Effekt, Spielauftritte und weitere Itemdaten.'
-      : 'The detail view shows price, effect, game appearances and further item data.',
+      ? 'Die Detailansicht zeigt Einkaufspreis, Effekt, Spielauftritte und weitere Itemdaten.'
+      : 'The detail view shows purchase price, effect, game appearances and further item data.',
     symbol: '◉',
     listMethod: () => PokeAPI.getBallItems(),
     detailMethod: (name) => PokeAPI.getItemDetails(name),
@@ -311,11 +325,11 @@ const configs = computed(() => ({
     singular: language.value === 'de' ? 'Spezialitem' : 'special item',
     kicker: language.value === 'de' ? 'Mega-, Z- und Storyitems' : 'Mega, Z and story items',
     description: language.value === 'de'
-      ? 'Mega-Steine, Z-Kristalle, artspezifische, Story- und weitere einzigartige Items werden getrennt gesammelt.'
-      : 'Mega Stones, Z-Crystals, species-specific, story and other unique items are collected separately.',
+      ? 'Mega-Steine, Z-Kristalle, artspezifische, Story- und weitere einzigartige Items werden getrennt gesammelt. Verfügbare Einkaufspreise stehen in der Liste.'
+      : 'Mega Stones, Z-Crystals, species-specific, story and other unique items are collected separately. Available purchase prices are shown in the list.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt das offizielle Sprite und alle verfügbaren PokéAPI-Daten.'
-      : 'The detail view shows the official sprite and all available PokéAPI data.',
+      ? 'Die Detailansicht zeigt das offizielle Sprite, den Einkaufspreis und alle verfügbaren PokéAPI-Daten.'
+      : 'The detail view shows the official sprite, purchase price and all available PokéAPI data.',
     symbol: '✦',
     listMethod: () => PokeAPI.getSpecialItems(),
     detailMethod: (name) => PokeAPI.getItemDetails(name),
@@ -340,6 +354,16 @@ const getDamageClassLabel = (damageClass) => getLocalizedDamageClassName(
 const getResourceCategory = (resource) => {
   const category = getResourceDetails(resource)?.category?.name;
   return category ? formatResourceName(category) : '';
+};
+const getResourceCost = (resource) => Number(getResourceDetails(resource)?.cost) || 0;
+const formatResourceCost = (resource) => {
+  const cost = getResourceCost(resource);
+
+  if (cost <= 0) {
+    return labels.value.notPurchasable;
+  }
+
+  return `${new Intl.NumberFormat(language.value === 'de' ? 'de-DE' : 'en-US').format(cost)} ₽`;
 };
 const getResourceSprite = (resource) => {
   const details = getResourceDetails(resource);
@@ -397,6 +421,17 @@ const filteredResources = computed(() => {
         getResourceCategory(secondResource),
         language.value,
       ) || firstResource.id - secondResource.id;
+    }
+
+    if (sortMode.value === 'price-asc') {
+      const firstCost = getResourceCost(firstResource) || Number.MAX_SAFE_INTEGER;
+      const secondCost = getResourceCost(secondResource) || Number.MAX_SAFE_INTEGER;
+      return firstCost - secondCost || firstResource.id - secondResource.id;
+    }
+
+    if (sortMode.value === 'price-desc') {
+      return getResourceCost(secondResource) - getResourceCost(firstResource)
+        || firstResource.id - secondResource.id;
     }
 
     return firstResource.id - secondResource.id;
@@ -723,7 +758,7 @@ onMounted(loadResources);
   gap: 9px;
   align-items: center;
   width: 100%;
-  min-height: 62px;
+  min-height: 70px;
   padding: 5px 8px 5px 5px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -767,9 +802,8 @@ onMounted(loadResources);
 
 .resource-number {
   color: inherit;
-  font-size: 0.7rem;
-  font-weight: 800;
-  opacity: 0.78;
+  font-size: 0.72rem;
+  font-weight: 900;
 }
 
 .resource-copy {
@@ -779,22 +813,30 @@ onMounted(loadResources);
 
 .resource-copy strong {
   overflow: hidden;
-  font-size: 0.84rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .resource-copy small {
   margin-top: 3px;
+  overflow: hidden;
   color: inherit;
-  font-size: 0.64rem;
-  opacity: 0.75;
+  font-size: 0.66rem;
+  opacity: 0.78;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-copy .purchase-price {
+  color: var(--legacy-text);
+  font-weight: 800;
+  opacity: 0.9;
 }
 
 .resource-arrow {
   color: inherit;
   font-size: 1.35rem;
-  opacity: 0.65;
+  opacity: 0.68;
 }
 
 .pagination {
@@ -811,7 +853,6 @@ onMounted(loadResources);
   min-height: 32px;
   padding: 5px 9px;
   border: 1px solid var(--legacy-border);
-  border-radius: 4px;
   color: var(--legacy-text);
   background: var(--legacy-surface);
 }
@@ -828,16 +869,16 @@ onMounted(loadResources);
 
 .detail-panel {
   min-width: 0;
-  outline: none;
   scroll-margin-top: 100px;
+  outline: none;
 }
 
 .empty-detail {
   display: flex;
   gap: 18px;
   align-items: center;
-  min-height: 320px;
-  padding: 32px;
+  min-height: 300px;
+  padding: 28px;
   border: 1px dashed var(--legacy-border-strong);
   color: var(--legacy-muted);
   background: var(--legacy-surface);
@@ -846,12 +887,12 @@ onMounted(loadResources);
 .empty-symbol {
   display: grid;
   flex: 0 0 auto;
-  width: 70px;
-  height: 70px;
+  width: 72px;
+  height: 72px;
   place-items: center;
   border: 1px solid var(--legacy-border);
   color: var(--legacy-text);
-  font-size: 1.6rem;
+  font-size: 1.7rem;
   background: var(--legacy-page);
 }
 
@@ -876,7 +917,7 @@ onMounted(loadResources);
   }
 
   .resource-list {
-    max-height: 440px;
+    max-height: 520px;
   }
 }
 
@@ -892,7 +933,6 @@ onMounted(loadResources);
   .empty-detail {
     align-items: flex-start;
     flex-direction: column;
-    padding: 18px;
   }
 }
 </style>
