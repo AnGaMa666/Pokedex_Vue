@@ -109,12 +109,17 @@ jobs:
 
           lftp <<LFTP_COMMANDS
           set cmd:fail-exit yes
-          set net:max-retries 2
-          set net:timeout 20
+          set net:max-retries 8
+          set net:timeout 30
           set net:reconnect-interval-base 5
+          set net:reconnect-interval-max 30
+          set net:connection-limit 1
+          set mirror:set-permissions no
           set sftp:auto-confirm no
-          set sftp:connect-program "ssh -a -x -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -p $STRATO_SFTP_PORT"
+          set sftp:max-packets-in-flight 1
+          set sftp:size-write 16384
+          set sftp:connect-program "ssh -4 -a -x -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p $STRATO_SFTP_PORT"
           open --env-password --user "$STRATO_SFTP_USER" "sftp://$STRATO_SFTP_HOST"
-          mirror --reverse --delete --parallel=2 --verbose=1 dist/ "$STRATO_SFTP_REMOTE_PATH"
+          mirror --reverse --delete --continue --verbose=2 dist/ "$STRATO_SFTP_REMOTE_PATH"
           bye
           LFTP_COMMANDS
