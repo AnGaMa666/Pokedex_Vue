@@ -86,8 +86,7 @@ img {
 .resource-button,
 .pokemon-button,
 .evolution-item,
-.special-form-item,
-.evolution-transition {
+.special-form-item {
   border-color: var(--legacy-border) !important;
   border-radius: 4px !important;
 }
@@ -105,8 +104,7 @@ img {
 .facts-grid > div,
 .descriptions,
 .evolution-item,
-.special-form-item,
-.evolution-transition {
+.special-form-item {
   color: var(--legacy-text) !important;
   background: var(--legacy-page) !important;
 }
@@ -218,6 +216,11 @@ img {
 .pokemon-button:hover .selection-arrow,
 .pokemon-button.is-active .selection-arrow {
   color: var(--legacy-text) !important;
+}
+
+.pokemon-button,
+.resource-button {
+  touch-action: manipulation;
 }
 
 .resource-directory,
