@@ -113,7 +113,7 @@ test('creates localized game appearance rows', () => {
   assert.deepEqual(rows, [
     {
       id: 1,
-      groupName: 'Red Blue',
+      groupName: 'Rot / Blau',
       generation: 'Generation I',
       games: [
         { slug: 'red', name: 'Rot' },
