@@ -1,29 +1,29 @@
 <template>
   <section
-    v-if="movesWithType.length"
+    v-if="displayedMoves.length"
     class="pokemon-moves"
     :aria-busy="loadingTypes"
     aria-labelledby="move-list-title"
   >
     <div class="move-heading">
       <h2 id="move-list-title">{{ t('navigation.moves.label') }}</h2>
-      <span>{{ movesWithType.length }}</span>
+      <span>{{ displayedMoves.length }}</span>
     </div>
 
     <ul class="move-list">
-      <li v-for="move in movesWithType" :key="move.name">
+      <li v-for="move in displayedMoves" :key="move.name">
         <button
           type="button"
           class="move-item"
           :style="{
             backgroundColor: getMoveTypeColor(move.type),
-            color: getMoveTextColor(move.type),
+            color: getTypeTextColor(move.type),
           }"
           :aria-label="`${move.label} ${t('resource.moves.singular')} öffnen`"
           @click="openMove(move)"
         >
           <strong>{{ move.label }}</strong>
-          <small v-if="move.type">{{ formatMoveName(move.type) }}</small>
+          <small v-if="move.type">{{ getLocalizedTypeName(move.type, language) }}</small>
           <small v-else aria-hidden="true">…</small>
         </button>
       </li>
@@ -35,6 +35,8 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
+import { getLocalizedTypeName, getTypeTextColor } from '@/utils/localization';
+import { getLocalizedName } from '@/utils/resource';
 
 const props = defineProps({
   pokemonDetails: {
@@ -44,7 +46,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['openResource']);
-const { t } = useI18n();
+const { language, t } = useI18n();
 
 const TYPE_COLORS = {
   fire: '#df4747',
@@ -67,28 +69,10 @@ const TYPE_COLORS = {
   normal: '#b6afaf',
 };
 
-const DARK_MOVE_TYPES = new Set([
-  'dark',
-  'dragon',
-  'fire',
-  'ghost',
-  'poison',
-  'rock',
-  'water',
-]);
-
 const MAX_PARALLEL_REQUESTS = 8;
 const movesWithType = ref([]);
 const loadingTypes = ref(false);
 let activeLoadId = 0;
-
-const formatMoveName = (name = '') => {
-  return name
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-};
 
 const moveEntries = computed(() => {
   const uniqueMoves = new Map();
@@ -99,18 +83,28 @@ const moveEntries = computed(() => {
     if (name && !uniqueMoves.has(name)) {
       uniqueMoves.set(name, {
         name,
-        label: formatMoveName(name),
         type: null,
+        names: [],
       });
     }
   }
 
-  return [...uniqueMoves.values()]
-    .sort((firstMove, secondMove) => firstMove.label.localeCompare(secondMove.label));
+  return [...uniqueMoves.values()];
+});
+
+const displayedMoves = computed(() => {
+  return movesWithType.value
+    .map((move) => ({
+      ...move,
+      label: getLocalizedName(move.names, move.name, language.value),
+    }))
+    .sort((firstMove, secondMove) => firstMove.label.localeCompare(
+      secondMove.label,
+      language.value,
+    ));
 });
 
 const getMoveTypeColor = (type) => TYPE_COLORS[type] || '#f8f8f8';
-const getMoveTextColor = (type) => DARK_MOVE_TYPES.has(type) ? '#ffffff' : '#333333';
 
 const openMove = (move) => {
   emit('openResource', {
@@ -148,6 +142,7 @@ const loadMoveTypes = async () => {
         movesWithType.value[index] = {
           ...movesWithType.value[index],
           type: response.data.type?.name || null,
+          names: response.data.names || [],
         };
       } catch (requestError) {
         console.error(`Failed to load the type for ${entries[index].name}:`, requestError);
