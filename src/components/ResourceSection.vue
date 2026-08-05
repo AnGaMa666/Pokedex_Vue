@@ -31,18 +31,27 @@
       </p>
 
       <template v-else>
-        <ul class="resource-list">
+        <ul class="resource-list" :aria-busy="enrichingResources">
           <li v-for="resource in pagedResources" :key="resource.id">
             <button
               type="button"
               class="resource-button"
-              :class="{ 'is-selected': selectedResource?.id === resource.id }"
+              :class="{
+                'is-selected': selectedResource?.id === resource.id,
+                'is-move': kind === 'moves' && getResourceType(resource),
+              }"
+              :style="getResourceStyle(resource)"
               :aria-current="selectedResource?.id === resource.id ? 'true' : undefined"
               :aria-controls="`${kind}-details`"
               @click="selectResource(resource)"
             >
               <span class="resource-number">#{{ formatResourceId(resource.id) }}</span>
-              <span class="resource-name">{{ formatResourceName(resource.name) }}</span>
+              <span class="resource-copy">
+                <strong class="resource-name">{{ getResourceLabel(resource) }}</strong>
+                <small v-if="kind === 'moves' && getResourceType(resource)">
+                  {{ getLocalizedTypeName(getResourceType(resource), language) }}
+                </small>
+              </span>
               <span class="resource-arrow" aria-hidden="true">›</span>
             </button>
           </li>
@@ -89,7 +98,14 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
-import { formatResourceId, formatResourceName, getResourceId } from '@/utils/resource';
+import { getLocalizedTypeName, getTypeTextColor } from '@/utils/localization';
+import {
+  formatResourceId,
+  formatResourceName,
+  getLocalizedName,
+  getResourceId,
+} from '@/utils/resource';
+import { getTypeColor } from '@/utils/typeColors';
 import BerryDetails from './BerryDetails.vue';
 import ItemDetails from './ItemDetails.vue';
 import MoveDetails from './MoveDetails.vue';
@@ -110,7 +126,7 @@ const props = defineProps({
   },
 });
 
-const { t } = useI18n();
+const { language, t } = useI18n();
 
 const sectionConfigs = computed(() => ({
   moves: {
@@ -146,24 +162,51 @@ const sectionConfigs = computed(() => ({
 }));
 
 const PAGE_SIZE = 60;
+const MAX_PARALLEL_DETAIL_REQUESTS = 8;
 const MACHINE_ITEM_PATTERN = /^(?:tm|hm|tr)\d+$/;
 const resources = ref([]);
+const resourceDetailsByName = ref({});
 const selectedResource = ref(null);
 const detailPanel = ref(null);
 const loading = ref(false);
+const enrichingResources = ref(false);
 const hasError = ref(false);
 const page = ref(1);
+let activeEnrichmentId = 0;
 
 const config = computed(() => sectionConfigs.value[props.kind]);
+
+const getResourceDetails = (resource) => resourceDetailsByName.value[resource.name] || null;
+const getResourceLabel = (resource) => {
+  const details = getResourceDetails(resource);
+  return getLocalizedName(details?.names, resource.name, language.value);
+};
+const getResourceType = (resource) => getResourceDetails(resource)?.type?.name || '';
+const getResourceStyle = (resource) => {
+  const type = getResourceType(resource);
+
+  if (props.kind !== 'moves' || !type) {
+    return {};
+  }
+
+  return {
+    '--move-color': getTypeColor(type),
+    '--move-text': getTypeTextColor(type),
+  };
+};
+
 const filteredResources = computed(() => {
-  const query = props.searchQuery.trim().toLowerCase();
+  const query = props.searchQuery.trim().toLocaleLowerCase(language.value);
 
   if (!query) {
     return resources.value;
   }
 
   return resources.value.filter((resource) => {
-    return resource.name.includes(query) || String(resource.id).includes(query);
+    const localizedLabel = getResourceLabel(resource).toLocaleLowerCase(language.value);
+    return resource.name.includes(query)
+      || localizedLabel.includes(query)
+      || String(resource.id).includes(query);
   });
 });
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredResources.value.length / PAGE_SIZE)));
@@ -178,6 +221,61 @@ const isVisibleItem = (resource) => {
   }
 
   return !resource.name.endsWith('-berry') && !MACHINE_ITEM_PATTERN.test(resource.name);
+};
+
+const getDetailRequest = (resource) => {
+  if (props.kind === 'moves') {
+    return PokeAPI.getMoveDetails(resource.name);
+  }
+
+  if (props.kind === 'items') {
+    return PokeAPI.getItemDetails(resource.name);
+  }
+
+  return PokeAPI.getItemDetails(`${resource.name}-berry`);
+};
+
+const enrichPagedResources = async () => {
+  const enrichmentId = ++activeEnrichmentId;
+  const entries = pagedResources.value.filter((resource) => !getResourceDetails(resource));
+
+  if (!entries.length) {
+    enrichingResources.value = false;
+    return;
+  }
+
+  enrichingResources.value = true;
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < entries.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const resource = entries[index];
+
+      try {
+        const response = await getDetailRequest(resource);
+
+        if (enrichmentId !== activeEnrichmentId) {
+          return;
+        }
+
+        resourceDetailsByName.value = {
+          ...resourceDetailsByName.value,
+          [resource.name]: response.data,
+        };
+      } catch (requestError) {
+        console.error(`Failed to localize ${props.kind} resource ${resource.name}:`, requestError);
+      }
+    }
+  };
+
+  const workerCount = Math.min(MAX_PARALLEL_DETAIL_REQUESTS, entries.length);
+  await Promise.all(Array.from({ length: workerCount }, worker));
+
+  if (enrichmentId === activeEnrichmentId) {
+    enrichingResources.value = false;
+  }
 };
 
 const scrollToDetails = async () => {
@@ -217,6 +315,8 @@ const openRequestedResource = async () => {
 
   const resource = resources.value[resourceIndex];
   page.value = Math.floor(resourceIndex / PAGE_SIZE) + 1;
+  await nextTick();
+  void enrichPagedResources();
   await selectResource(resource);
 };
 
@@ -224,6 +324,7 @@ const loadResources = async () => {
   loading.value = true;
   hasError.value = false;
   selectedResource.value = null;
+  resourceDetailsByName.value = {};
 
   try {
     const response = await config.value.listMethod();
@@ -236,6 +337,7 @@ const loadResources = async () => {
       .sort((firstResource, secondResource) => firstResource.id - secondResource.id);
 
     await openRequestedResource();
+    void enrichPagedResources();
   } catch (requestError) {
     console.error(`Failed to load ${props.kind}:`, requestError);
     hasError.value = true;
@@ -254,6 +356,13 @@ watch(
 watch(
   () => props.requestedResource,
   openRequestedResource,
+);
+
+watch(
+  () => `${props.kind}:${page.value}:${pagedResources.value.map((resource) => resource.name).join('|')}`,
+  () => {
+    void enrichPagedResources();
+  },
 );
 
 watch(pageCount, (newPageCount) => {
@@ -366,19 +475,39 @@ onMounted(loadResources);
   background: transparent;
 }
 
+.resource-button.is-move {
+  color: var(--move-text) !important;
+  background: var(--move-color) !important;
+}
+
+.resource-button.is-move .resource-number,
+.resource-button.is-move .resource-arrow {
+  color: inherit !important;
+  opacity: 0.8;
+}
+
 .resource-button:hover {
   background: #f3f6fa;
 }
 
+.resource-button.is-move:hover {
+  filter: brightness(0.96);
+}
+
 .resource-button:focus-visible {
-  outline: 3px solid rgba(220, 38, 38, 0.22);
+  outline: 3px solid rgba(51, 51, 51, 0.34);
   outline-offset: -2px;
 }
 
-.resource-button.is-selected {
+.resource-button.is-selected:not(.is-move) {
   border-color: rgba(220, 38, 38, 0.24);
   color: #991b1b;
   background: #fff1f1;
+}
+
+.resource-button.is-selected.is-move {
+  border-color: #333333 !important;
+  box-shadow: inset 4px 0 0 #333333 !important;
 }
 
 .resource-number {
@@ -387,11 +516,23 @@ onMounted(loadResources);
   font-variant-numeric: tabular-nums;
 }
 
+.resource-copy {
+  display: grid;
+  min-width: 0;
+}
+
 .resource-name {
   overflow: hidden;
   font-weight: 780;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resource-copy small {
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  opacity: 0.82;
 }
 
 .resource-arrow {
@@ -526,7 +667,7 @@ onMounted(loadResources);
 
   .resource-button {
     grid-template-columns: 56px minmax(0, 1fr) auto;
-    min-height: 42px;
+    min-height: 44px;
     padding: 5px 8px;
   }
 
