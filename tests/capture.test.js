@@ -7,12 +7,16 @@ import {
 } from '../src/utils/capture.js';
 
 const baseContext = {
+  mechanics: 'gen9',
   maxHp: 100,
   currentHp: 100,
   status: 'none',
   targetLevel: 50,
   playerLevel: 50,
   turns: 1,
+  badges: 8,
+  capturePower: 0,
+  backStrike: false,
   isNightOrCave: false,
   isFishingOrUnderwater: false,
   caughtBefore: false,
@@ -34,7 +38,36 @@ test('Master Ball is always guaranteed', () => {
   }), 1);
 });
 
-test('lower HP and sleep increase the estimated capture probability', () => {
+test('Generation IX uses the modern shake probability instead of catch-rate divided by 255', () => {
+  const probability = calculateCaptureProbability({
+    captureRate: 45,
+    ball: getBall('poke-ball'),
+    context: {
+      ...baseContext,
+      currentHp: 1,
+      status: 'sleep',
+    },
+  });
+
+  assert.ok(Math.abs(probability - 0.5385955232058782) < 0.0000001);
+});
+
+test('Generation III and IV use the classic four-shake formula and lower sleep modifier', () => {
+  const probability = calculateCaptureProbability({
+    captureRate: 45,
+    ball: getBall('poke-ball'),
+    context: {
+      ...baseContext,
+      mechanics: 'gen3-4',
+      currentHp: 1,
+      status: 'sleep',
+    },
+  });
+
+  assert.ok(Math.abs(probability - 0.34898163172774366) < 0.0000001);
+});
+
+test('lower HP and sleep increase the capture probability', () => {
   const healthyProbability = calculateCaptureProbability({
     captureRate: 45,
     ball: getBall('poke-ball'),
@@ -53,7 +86,7 @@ test('lower HP and sleep increase the estimated capture probability', () => {
   assert.ok(weakenedProbability > healthyProbability);
 });
 
-test('Quick Ball receives its conditional first-turn multiplier', () => {
+test('Quick Ball receives its first-turn multiplier in modern games', () => {
   const rates = calculateBallRates({
     captureRate: 45,
     context: baseContext,
@@ -62,6 +95,39 @@ test('Quick Ball receives its conditional first-turn multiplier', () => {
 
   assert.equal(quickBall.multiplier, 5);
   assert.ok(quickBall.probability > 0);
+});
+
+test('Quick Ball uses the Generation IV multiplier in classic mode', () => {
+  const rates = calculateBallRates({
+    captureRate: 45,
+    context: {
+      ...baseContext,
+      mechanics: 'gen3-4',
+    },
+  });
+  const quickBall = rates.find((ball) => ball.name === 'quick-ball');
+
+  assert.equal(quickBall.multiplier, 4);
+});
+
+test('Dream Ball only receives its modern bonus while the target is asleep', () => {
+  const sleeping = calculateBallRates({
+    captureRate: 45,
+    context: {
+      ...baseContext,
+      status: 'sleep',
+    },
+  }).find((ball) => ball.name === 'dream-ball');
+  const frozen = calculateBallRates({
+    captureRate: 45,
+    context: {
+      ...baseContext,
+      status: 'freeze',
+    },
+  }).find((ball) => ball.name === 'dream-ball');
+
+  assert.equal(sleeping.multiplier, 4);
+  assert.equal(frozen.multiplier, 1);
 });
 
 test('Beast Ball is penalized against ordinary Pokémon', () => {
