@@ -87,11 +87,11 @@ export const getVersionResourcesFromGroups = (versionGroups = []) => {
   );
 };
 
-export const formatGenerationName = (generationName = '', language = 'en') => {
+export const formatGenerationName = (generationName = '') => {
   const romanNumber = ROMAN_GENERATIONS[generationName];
 
   if (romanNumber) {
-    return `${language === 'de' ? 'Generation' : 'Generation'} ${romanNumber}`;
+    return `Generation ${romanNumber}`;
   }
 
   return formatResourceName(generationName);
@@ -112,15 +112,19 @@ export const createGameAppearanceRows = ({
       return (firstGroup.order ?? Number.MAX_SAFE_INTEGER)
         - (secondGroup.order ?? Number.MAX_SAFE_INTEGER);
     })
-    .map((versionGroup) => ({
-      id: versionGroup.id ?? versionGroup.name,
-      groupName: formatResourceName(versionGroup.name),
-      generation: formatGenerationName(versionGroup.generation?.name, language),
-      games: uniqueNamedResources(versionGroup.versions || []).map((version) => ({
+    .map((versionGroup) => {
+      const games = uniqueNamedResources(versionGroup.versions || []).map((version) => ({
         slug: version.name,
         name: getLocalizedVersionName(version, versionsByName, language),
-      })),
-    }))
+      }));
+
+      return {
+        id: versionGroup.id ?? versionGroup.name,
+        groupName: games.map((game) => game.name).join(' / '),
+        generation: formatGenerationName(versionGroup.generation?.name),
+        games,
+      };
+    })
     .filter((row) => row.games.length > 0);
 };
 
