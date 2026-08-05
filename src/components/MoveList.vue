@@ -10,7 +10,7 @@
         <h2 id="move-list-title">{{ labels.title }}</h2>
         <small>{{ labels.subtitle }}</small>
       </div>
-      <span>{{ displayedMoves.length }} / {{ moveEntries.length }}</span>
+      <span>{{ displayedMoves.length }} / {{ relevantMoveEntries.length }}</span>
     </div>
 
     <div class="move-controls" :aria-label="labels.filters">
@@ -68,7 +68,11 @@
     <p v-else-if="displayedMoves.length === 0" class="move-status">{{ labels.noMatches }}</p>
 
     <ul v-else class="move-list">
-      <li v-for="move in displayedMoves" :key="move.name">
+      <li
+        v-for="move in displayedMoves"
+        :key="move.name"
+        v-memo="[move, language]"
+      >
         <button
           type="button"
           class="move-item"
@@ -144,7 +148,7 @@ const TYPE_COLORS = {
   normal: '#b6afaf',
 };
 
-const MAX_PARALLEL_REQUESTS = 8;
+const MAX_PARALLEL_REQUESTS = 6;
 const moveDetailsByName = ref({});
 const loadingDetails = ref(false);
 const selectedVersionGroup = ref('');
@@ -256,6 +260,18 @@ const versionGroupOptions = computed(() => {
   });
 });
 
+const relevantMoveEntries = computed(() => {
+  if (!selectedVersionGroup.value) {
+    return moveEntries.value;
+  }
+
+  return moveEntries.value.filter((move) => {
+    return move.versionGroupDetails.some((detail) => {
+      return detail.version_group?.name === selectedVersionGroup.value;
+    });
+  });
+});
+
 const getLearningForMove = (move) => {
   const matchingEntries = move.versionGroupDetails.filter((detail) => {
     return !selectedVersionGroup.value
@@ -269,7 +285,7 @@ const getLearningForMove = (move) => {
 };
 
 const enrichedMoves = computed(() => {
-  return moveEntries.value
+  return relevantMoveEntries.value
     .map((move) => {
       const details = moveDetailsByName.value[move.name];
       const learning = getLearningForMove(move);
@@ -386,7 +402,7 @@ const openMove = (move) => {
 
 const loadMoveDetails = async () => {
   const loadId = ++activeLoadId;
-  const missingMoves = moveEntries.value.filter((move) => {
+  const missingMoves = relevantMoveEntries.value.filter((move) => {
     return !moveDetailsByName.value[move.name];
   });
 
@@ -411,10 +427,7 @@ const loadMoveDetails = async () => {
           return;
         }
 
-        moveDetailsByName.value = {
-          ...moveDetailsByName.value,
-          [move.name]: response.data,
-        };
+        moveDetailsByName.value[move.name] = response.data;
       } catch (requestError) {
         console.error(`Failed to load move ${move.name}:`, requestError);
       }
@@ -432,13 +445,14 @@ const loadMoveDetails = async () => {
 watch(
   () => props.pokemonDetails,
   () => {
+    activeLoadId += 1;
     moveDetailsByName.value = {};
+    loadingDetails.value = false;
     selectedDamageClass.value = '';
     selectedLearnMethod.value = '';
     selectedType.value = '';
     sortMode.value = 'name';
     selectedVersionGroup.value = versionGroupOptions.value[0]?.name || '';
-    void loadMoveDetails();
   },
   { immediate: true },
 );
@@ -447,6 +461,13 @@ watch(versionGroupOptions, (groups) => {
   if (!groups.some((group) => group.name === selectedVersionGroup.value)) {
     selectedVersionGroup.value = groups[0]?.name || '';
   }
+}, { immediate: true });
+
+watch(selectedVersionGroup, () => {
+  selectedDamageClass.value = '';
+  selectedLearnMethod.value = '';
+  selectedType.value = '';
+  void loadMoveDetails();
 }, { immediate: true });
 </script>
 
@@ -535,7 +556,13 @@ watch(versionGroupOptions, (groups) => {
   padding: 9px;
   margin: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   list-style: none;
+}
+
+.move-list > li {
+  content-visibility: auto;
+  contain-intrinsic-size: 100px;
 }
 
 .move-item {
