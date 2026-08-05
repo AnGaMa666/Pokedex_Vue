@@ -52,15 +52,15 @@
               <img
                 v-if="slot.details"
                 :src="getPokemonSprite(slot.details, spriteMode, isShiny)"
-                :alt="`${formatPokemonName(slot.speciesName)} sprite`"
-                width="94"
-                height="94"
+                :alt="`${formatName(slot.speciesName)} sprite`"
+                width="88"
+                height="88"
               >
               <span v-else aria-hidden="true">{{ slotIndex + 1 }}</span>
             </div>
             <div>
               <p>{{ labels.slot }} {{ slotIndex + 1 }}</p>
-              <h2>{{ slot.details ? formatPokemonName(slot.speciesName) : labels.emptySlot }}</h2>
+              <h2>{{ slot.details ? formatName(slot.speciesName) : labels.emptySlot }}</h2>
               <div v-if="slot.details" class="slot-types">
                 <span
                   v-for="typeEntry in slot.details.types"
@@ -89,7 +89,7 @@
               v-model.trim="slot.speciesName"
               list="team-pokemon-options"
               :placeholder="labels.pokemonPlaceholder"
-              @change="loadSlot(slotIndex)"
+              @change="loadSlot(slotIndex, false)"
             >
           </label>
 
@@ -110,7 +110,7 @@
                     :key="abilityEntry.ability.name"
                     :value="abilityEntry.ability.name"
                   >
-                    {{ formatPokemonName(abilityEntry.ability.name) }}
+                    {{ formatName(abilityEntry.ability.name) }}
                     {{ abilityEntry.is_hidden ? `(${labels.hidden})` : '' }}
                   </option>
                 </select>
@@ -190,13 +190,13 @@
 
     <datalist id="team-pokemon-options">
       <option v-for="pokemon in pokemonOptions" :key="pokemon.name" :value="pokemon.name">
-        #{{ pokemon.id }} {{ formatPokemonName(pokemon.name) }}
+        #{{ pokemon.id }} {{ formatName(pokemon.name) }}
       </option>
     </datalist>
 
     <datalist id="team-item-options">
       <option v-for="item in itemOptions" :key="item.name" :value="item.name">
-        {{ formatPokemonName(item.name) }}
+        {{ formatName(item.name) }}
       </option>
     </datalist>
   </section>
@@ -242,6 +242,7 @@ const statNames = BATTLE_STATS;
 const pokemonOptions = ref([]);
 const itemOptions = ref([]);
 const copyState = ref('');
+const restoring = ref(false);
 
 const createStatValues = (defaultValue) => Object.fromEntries(
   BATTLE_STATS.map((statName) => [statName, defaultValue]),
@@ -351,7 +352,6 @@ const germanNatureNames = {
   modest: 'Mäßig', mild: 'Mild', quiet: 'Ruhig', bashful: 'Zaghaft', rash: 'Hitzig',
   calm: 'Still', gentle: 'Zart', sassy: 'Forsch', careful: 'Sacht', quirky: 'Kauzig',
 };
-
 const statLabelsDe = {
   hp: 'KP', attack: 'Angriff', defense: 'Verteidigung',
   'special-attack': 'Spezial-Angriff', 'special-defense': 'Spezial-Verteidigung', speed: 'Initiative',
@@ -368,77 +368,26 @@ const natureOptions = computed(() => NATURES.map((nature) => ({
     : nature.name.charAt(0).toUpperCase() + nature.name.slice(1),
 })));
 
-const teamTypes = computed(() => {
+const countValues = (values) => {
   const counts = new Map();
 
-  for (const slot of teamSlots) {
-    for (const typeEntry of slot.details?.types || []) {
-      const type = typeEntry.type.name;
-      counts.set(type, (counts.get(type) || 0) + 1);
-    }
+  for (const value of values) {
+    counts.set(value, (counts.get(value) || 0) + 1);
   }
 
   return [...counts.entries()]
     .map(([type, count]) => ({ type, count }))
     .sort((first, second) => second.count - first.count || first.type.localeCompare(second.type));
-});
+};
 
-const teamWeaknesses = computed(() => {
-  const counts = new Map();
+const teamTypes = computed(() => countValues(
+  teamSlots.flatMap((slot) => (slot.details?.types || []).map((entry) => entry.type.name)),
+));
+const teamWeaknesses = computed(() => countValues(
+  teamSlots.flatMap((slot) => slot.damageRelations?.weaknesses || []),
+).filter((entry) => entry.count >= 2));
 
-  for (const slot of teamSlots) {
-    for (const type of slot.damageRelations?.weaknesses || []) {
-      counts.set(type, (counts.get(type) || 0) + 1);
-    }
-  }
-
-  return [...counts.entries()]
-    .map(([type, count]) => ({ type, count }))
-    .filter((entry) => entry.count >= 2)
-    .sort((first, second) => second.count - first.count || first.type.localeCompare(second.type));
-});
-
-const teamExport = computed(() => teamSlots
-  .filter((slot) => slot.details)
-  .map((slot) => {
-    const lines = [];
-    const pokemonName = formatPokemonName(slot.speciesName);
-    lines.push(slot.item ? `${pokemonName} @ ${formatPokemonName(slot.item)}` : pokemonName);
-
-    if (slot.ability) {
-      lines.push(`Ability: ${formatPokemonName(slot.ability)}`);
-    }
-
-    lines.push(`Level: ${slot.level}`);
-    lines.push(`${formatPokemonName(slot.nature)} Nature`);
-
-    const evLine = BATTLE_STATS
-      .filter((statName) => Number(slot.evs[statName]) > 0)
-      .map((statName) => `${slot.evs[statName]} ${getStatAbbreviation(statName)}`)
-      .join(' / ');
-
-    if (evLine) {
-      lines.push(`EVs: ${evLine}`);
-    }
-
-    const ivLine = BATTLE_STATS
-      .filter((statName) => Number(slot.ivs[statName]) < 31)
-      .map((statName) => `${slot.ivs[statName]} ${getStatAbbreviation(statName)}`)
-      .join(' / ');
-
-    if (ivLine) {
-      lines.push(`IVs: ${ivLine}`);
-    }
-
-    for (const move of slot.moves.filter(Boolean)) {
-      lines.push(`- ${formatPokemonName(move)}`);
-    }
-
-    return lines.join('\n');
-  })
-  .join('\n\n'));
-
-const formatPokemonName = (name = '') => name
+const formatName = (name = '') => name
   .split('-')
   .filter(Boolean)
   .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -469,25 +418,68 @@ const getMoveOptions = (slot) => [...new Set(
   (slot.details?.moves || []).map((entry) => entry.move?.name).filter(Boolean),
 )].sort();
 
+const teamExport = computed(() => teamSlots
+  .filter((slot) => slot.details)
+  .map((slot) => {
+    const lines = [slot.item
+      ? `${formatName(slot.speciesName)} @ ${formatName(slot.item)}`
+      : formatName(slot.speciesName)];
+
+    if (slot.ability) {
+      lines.push(`Ability: ${formatName(slot.ability)}`);
+    }
+
+    lines.push(`Level: ${slot.level}`);
+    lines.push(`${formatName(slot.nature)} Nature`);
+
+    const evLine = BATTLE_STATS
+      .filter((statName) => Number(slot.evs[statName]) > 0)
+      .map((statName) => `${slot.evs[statName]} ${getStatAbbreviation(statName)}`)
+      .join(' / ');
+    const ivLine = BATTLE_STATS
+      .filter((statName) => Number(slot.ivs[statName]) < 31)
+      .map((statName) => `${slot.ivs[statName]} ${getStatAbbreviation(statName)}`)
+      .join(' / ');
+
+    if (evLine) {
+      lines.push(`EVs: ${evLine}`);
+    }
+
+    if (ivLine) {
+      lines.push(`IVs: ${ivLine}`);
+    }
+
+    slot.moves.filter(Boolean).forEach((move) => lines.push(`- ${formatName(move)}`));
+    return lines.join('\n');
+  })
+  .join('\n\n'));
+
 const normalizeSlotNumber = (target, statName, maximum) => {
   const value = Number(target[statName]);
   target[statName] = Math.min(maximum, Math.max(0, Number.isFinite(value) ? Math.trunc(value) : 0));
 };
 
-const resetSlotData = (slot) => {
+const clearLoadedData = (slot, preserveConfiguration) => {
   slot.details = null;
   slot.species = null;
   slot.damageRelations = null;
   slot.error = '';
-  slot.ability = '';
-  slot.moves = ['', '', '', ''];
+
+  if (!preserveConfiguration) {
+    slot.ability = '';
+    slot.item = '';
+    slot.moves = ['', '', '', ''];
+  }
 };
 
-const loadSlot = async (slotIndex) => {
+const loadSlot = async (slotIndex, preserveConfiguration = false) => {
   const slot = teamSlots[slotIndex];
   const speciesName = slot.speciesName.trim().toLowerCase();
+  const savedAbility = slot.ability;
+  const savedMoves = [...slot.moves];
+  const savedItem = slot.item;
   slot.speciesName = speciesName;
-  resetSlotData(slot);
+  clearLoadedData(slot, preserveConfiguration);
 
   if (!speciesName) {
     return;
@@ -505,15 +497,23 @@ const loadSlot = async (slotIndex) => {
       PokeAPI.getPokemonDetails(speciesName),
       PokeAPI.getPokemonSpecies(speciesName),
     ]);
-    const damageRelations = await PokeAPI.getPokemonDamageRelations(detailsResponse.data.types);
     slot.details = detailsResponse.data;
     slot.species = speciesResponse.data;
-    slot.damageRelations = damageRelations;
+    slot.damageRelations = await PokeAPI.getPokemonDamageRelations(detailsResponse.data.types);
 
-    const abilityNames = detailsResponse.data.abilities || [];
+    const validAbilities = new Set(
+      (detailsResponse.data.abilities || []).map((entry) => entry.ability.name),
+    );
+    slot.ability = preserveConfiguration && validAbilities.has(savedAbility)
+      ? savedAbility
+      : detailsResponse.data.abilities?.[0]?.ability?.name || '';
 
-    if (!abilityNames.some((entry) => entry.ability.name === slot.ability)) {
-      slot.ability = abilityNames[0]?.ability?.name || '';
+    if (preserveConfiguration) {
+      const validMoves = new Set(
+        (detailsResponse.data.moves || []).map((entry) => entry.move?.name).filter(Boolean),
+      );
+      slot.moves = savedMoves.map((move) => validMoves.has(move) ? move : '');
+      slot.item = savedItem;
     }
   } catch (requestError) {
     console.error(`Failed to load team slot ${speciesName}:`, requestError);
@@ -524,18 +524,14 @@ const loadSlot = async (slotIndex) => {
 };
 
 const clearSlot = (slotIndex) => {
-  const replacement = createEmptySlot(slotIndex + 1);
-  Object.assign(teamSlots[slotIndex], replacement);
+  Object.assign(teamSlots[slotIndex], createEmptySlot(slotIndex + 1));
 };
-
 const clearTeam = () => {
   for (let index = 0; index < TEAM_SIZE; index += 1) {
     clearSlot(index);
   }
 };
-
 const serializeTeam = () => teamSlots.map((slot) => ({
-  slotId: slot.slotId,
   speciesName: slot.speciesName,
   level: slot.level,
   ability: slot.ability,
@@ -545,16 +541,15 @@ const serializeTeam = () => teamSlots.map((slot) => ({
   ivs: { ...slot.ivs },
   evs: { ...slot.evs },
 }));
-
 const saveTeam = () => {
-  if (typeof window === 'undefined' || !window.localStorage) {
+  if (restoring.value || typeof window === 'undefined' || !window.localStorage) {
     return;
   }
 
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeTeam()));
   } catch {
-    // The builder continues to work when local storage is unavailable.
+    // The builder remains usable when local storage is unavailable.
   }
 };
 
@@ -562,6 +557,8 @@ const restoreTeam = async () => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return;
   }
+
+  restoring.value = true;
 
   try {
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
@@ -585,10 +582,13 @@ const restoreTeam = async () => {
     });
 
     await Promise.all(teamSlots.map((slot, index) => {
-      return slot.speciesName ? loadSlot(index) : Promise.resolve();
+      return slot.speciesName ? loadSlot(index, true) : Promise.resolve();
     }));
   } catch (requestError) {
     console.error('Failed to restore competitive team:', requestError);
+  } finally {
+    restoring.value = false;
+    saveTeam();
   }
 };
 
@@ -621,12 +621,7 @@ const copyExport = async () => {
   }, 1800);
 };
 
-watch(
-  teamSlots,
-  saveTeam,
-  { deep: true },
-);
-
+watch(teamSlots, saveTeam, { deep: true });
 watch(labels, () => {
   copyState.value = labels.value.copy;
 }, { immediate: true });
@@ -637,26 +632,32 @@ onMounted(loadOptions);
 <style scoped>
 .team-builder {
   display: grid;
-  gap: 16px;
+  gap: 14px;
 }
 
-.team-header {
-  display: flex;
-  gap: 20px;
-  justify-content: space-between;
-  align-items: start;
-  padding: 22px;
+.team-header,
+.team-overview article,
+.team-slot {
   border: 1px solid var(--legacy-border);
   background: var(--legacy-surface);
   box-shadow: 0 2px 5px var(--legacy-shadow);
 }
 
-.team-header p {
+.team-header {
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  align-items: start;
+  padding: 20px;
+}
+
+.team-header p,
+.slot-identity p {
   margin: 0 0 5px;
   color: var(--legacy-muted);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 900;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -665,7 +666,7 @@ onMounted(loadOptions);
   font-size: clamp(1.8rem, 4vw, 3rem);
 }
 
-.team-header span {
+.team-header > div > span {
   display: block;
   max-width: 850px;
   margin-top: 8px;
@@ -676,22 +677,17 @@ onMounted(loadOptions);
 .team-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
   justify-content: flex-end;
 }
 
 .team-actions button,
 .remove-button {
-  min-height: 38px;
-  padding: 7px 11px;
+  min-height: 36px;
+  padding: 6px 10px;
   border: 1px solid var(--legacy-border);
   color: var(--legacy-text);
   background: var(--legacy-page);
-}
-
-.team-actions button:hover,
-.remove-button:hover:not(:disabled) {
-  background: var(--legacy-surface-hover);
 }
 
 .remove-button:disabled {
@@ -701,13 +697,11 @@ onMounted(loadOptions);
 .team-overview {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 9px;
 }
 
 .team-overview article {
-  padding: 14px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
+  padding: 13px;
 }
 
 .team-overview h2 {
@@ -720,24 +714,24 @@ onMounted(loadOptions);
   color: var(--legacy-muted);
 }
 
-.overview-chips {
+.overview-chips,
+.slot-types {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 5px;
+  margin-top: 8px;
 }
 
-.overview-chips span {
-  padding: 5px 8px;
+.overview-chips span,
+.slot-types span {
+  padding: 4px 7px;
   border: 1px solid var(--legacy-border);
-  border-radius: 999px;
-  background: var(--legacy-page);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 800;
 }
 
 .weakness-chips span {
-  border-color: #b91c1c;
+  border-color: var(--danger-color);
 }
 
 .export-card {
@@ -746,8 +740,8 @@ onMounted(loadOptions);
 
 .export-card textarea {
   width: 100%;
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: 9px;
+  padding: 9px;
   border: 1px solid var(--legacy-border);
   color: var(--legacy-text);
   background: var(--legacy-page);
@@ -758,34 +752,27 @@ onMounted(loadOptions);
 .slot-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
   align-items: start;
 }
 
 .team-slot {
   min-width: 0;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-  box-shadow: 0 2px 5px var(--legacy-shadow);
-}
-
-.team-slot.filled {
-  border-color: var(--legacy-border-strong);
 }
 
 .slot-header {
   display: flex;
-  gap: 14px;
+  gap: 12px;
   justify-content: space-between;
   align-items: start;
-  padding: 12px;
+  padding: 11px;
   border-bottom: 1px solid var(--legacy-border);
   background: var(--legacy-page);
 }
 
 .slot-identity {
   display: flex;
-  gap: 10px;
+  gap: 9px;
   min-width: 0;
   align-items: center;
 }
@@ -793,8 +780,8 @@ onMounted(loadOptions);
 .slot-sprite {
   display: grid;
   flex: 0 0 auto;
-  width: 94px;
-  height: 94px;
+  width: 88px;
+  height: 88px;
   place-items: center;
   overflow: hidden;
   border: 1px solid var(--legacy-border);
@@ -802,57 +789,41 @@ onMounted(loadOptions);
 }
 
 .slot-sprite img {
-  width: 90px;
-  height: 90px;
+  width: 84px;
+  height: 84px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 
 .slot-sprite > span {
   color: var(--legacy-muted);
-  font-size: 1.8rem;
+  font-size: 1.7rem;
   font-weight: 900;
-}
-
-.slot-identity p {
-  margin: 0 0 4px;
-  color: var(--legacy-muted);
-  font-size: 0.64rem;
-  font-weight: 900;
-  text-transform: uppercase;
 }
 
 .slot-identity h2 {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 1.2rem;
-}
-
-.slot-types {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  font-size: 1.15rem;
 }
 
 .slot-types span {
-  padding: 3px 6px;
-  border: 1px solid rgba(51, 51, 51, 0.2);
-  color: #333333;
-  font-size: 0.6rem;
+  color: #222222;
+  margin-top: 0;
+  font-size: 0.58rem;
   font-weight: 900;
 }
 
 .slot-form {
-  padding: 12px;
+  padding: 11px;
 }
 
 .slot-form label,
 .moves-fieldset label {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   color: var(--legacy-muted);
-  font-size: 0.66rem;
+  font-size: 0.64rem;
   font-weight: 850;
 }
 
@@ -860,46 +831,46 @@ onMounted(loadOptions);
 .slot-form select {
   width: 100%;
   min-width: 0;
-  min-height: 35px;
-  padding: 6px 8px;
+  min-height: 34px;
+  padding: 5px 7px;
   border: 1px solid var(--legacy-border);
   color: var(--legacy-text);
   background: var(--legacy-page);
 }
 
 .species-field {
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
 
 .slot-status,
 .slot-error {
-  margin: 8px 0;
+  margin: 7px 0;
   color: var(--legacy-muted);
 }
 
 .slot-error {
-  color: #b91c1c;
+  color: var(--danger-color);
 }
 
 .basic-grid,
 .move-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 7px;
 }
 
 .moves-fieldset,
 .training-fieldset {
   min-width: 0;
-  padding: 10px;
-  margin: 12px 0 0;
+  padding: 9px;
+  margin: 10px 0 0;
   border: 1px solid var(--legacy-border);
 }
 
 .moves-fieldset legend,
 .training-fieldset legend {
-  padding: 0 5px;
-  font-size: 0.72rem;
+  padding: 0 4px;
+  font-size: 0.7rem;
   font-weight: 900;
 }
 
@@ -911,39 +882,39 @@ onMounted(loadOptions);
 
 .training-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1.4fr) 55px 70px 70px 65px;
-  gap: 6px;
+  grid-template-columns: minmax(118px, 1.4fr) 52px 68px 68px 62px;
+  gap: 5px;
   align-items: center;
-  min-width: 445px;
-  padding: 6px;
+  min-width: 425px;
+  padding: 5px;
   border: 1px solid var(--legacy-border);
   background: var(--legacy-page);
 }
 
 .training-head {
   color: var(--legacy-muted);
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 900;
   text-transform: uppercase;
 }
 
 .training-row input {
-  min-height: 31px;
+  min-height: 30px;
 }
 
 .ev-summary {
   display: flex;
   justify-content: space-between;
-  margin-top: 7px;
-  padding: 8px;
+  margin-top: 6px;
+  padding: 7px;
   border: 1px solid var(--legacy-border);
   background: var(--legacy-page);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
 }
 
 .ev-summary.invalid {
-  border-color: #b91c1c;
-  color: #b91c1c;
+  border-color: var(--danger-color);
+  color: var(--danger-color);
 }
 
 @media (max-width: 1200px) {
@@ -956,7 +927,7 @@ onMounted(loadOptions);
   .team-header {
     align-items: stretch;
     flex-direction: column;
-    padding: 16px;
+    padding: 15px;
   }
 
   .team-actions {
@@ -979,13 +950,13 @@ onMounted(loadOptions);
   }
 
   .slot-sprite {
-    width: 76px;
-    height: 76px;
+    width: 74px;
+    height: 74px;
   }
 
   .slot-sprite img {
-    width: 72px;
-    height: 72px;
+    width: 70px;
+    height: 70px;
   }
 
   .basic-grid,
