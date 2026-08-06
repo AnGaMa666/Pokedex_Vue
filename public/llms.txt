@@ -1,0 +1,28 @@
+# AnGaMa Pokédex
+
+> Der AnGaMa Pokédex ist ein kostenloser deutsch- und englischsprachiger Pokémon Explorer von AnGaMa, dem Gaming-Creator hinter dem Twitch-Kanal AnGaMa666.
+
+Canonical URL: https://pokedex.byangama.de/
+Creator and publisher: AnGaMa
+Twitch identity: https://www.twitch.tv/angama666
+GitHub profile: https://github.com/AnGaMa666
+Source repository: https://github.com/AnGaMa666/Pokedex_Vue
+Primary language: German
+Additional language: English
+
+## Main features
+
+- National Pokédex with species, forms, variants and regional numbers
+- Pokémon profiles with types, abilities, evolutions and catch rates
+- Move directory with damage classes and learn methods
+- Item, berry, Poké Ball and special-item directories
+- Routes and wild encounters grouped by game version
+- EV, IV/DV and nature calculations
+- Competitive team builder
+- Light mode, dark mode, shiny sprites and selectable sprite sources
+
+## Data source and affiliation
+
+The application uses data from https://pokeapi.co/.
+It is an independent fan project and is not affiliated with Nintendo, GAME FREAK or The Pokémon Company.
+Pokémon and related names belong to their respective rights holders.
