@@ -91,7 +91,7 @@
           v-for="pokemon in pagedPokemons"
           :key="pokemon.id"
           v-memo="[
-            pokemon.id === selectedPokemonId,
+            selectedPokemonId,
             isShiny,
             spriteMode,
             language,
@@ -159,10 +159,12 @@
               <button
                 type="button"
                 class="variant-button"
+                :class="{ 'is-active': getVariantId(variant) === selectedPokemonId }"
+                :aria-current="getVariantId(variant) === selectedPokemonId ? 'true' : undefined"
                 :aria-label="labels.openVariant
                   .replace('{variant}', getVariantLabel(pokemon, variant))
                   .replace('{name}', getPokemonLabel(pokemon))"
-                @click="selectPokemon(pokemon)"
+                @click="selectVariant(pokemon, variant)"
               >
                 <span class="variant-connector" aria-hidden="true"></span>
                 <span class="variant-sprite" aria-hidden="true">
@@ -173,12 +175,12 @@
                     height="52"
                     loading="lazy"
                     decoding="async"
-                    @error="useFallbackSprite($event, pokemon.id)"
+                    @error="useFallbackSprite($event, getVariantId(variant) || pokemon.id)"
                   >
                 </span>
                 <span class="variant-copy">
                   <span class="variant-number">
-                    #{{ formatPokemonId(pokemon.id) }} · {{ labels.variant }}
+                    #{{ formatPokemonId(getVariantId(variant)) }} · {{ labels.variant }}
                   </span>
                   <strong>{{ getVariantLabel(pokemon, variant) }}</strong>
                   <small>{{ getVariantKind(variant) }}</small>
@@ -232,6 +234,7 @@ import {
 import { getPokemonListSprite } from '@/utils/sprites';
 import { getLocalizedTypeName } from '@/utils/localization';
 import { getSpecialFormKind } from '@/utils/pokemonForms';
+import { createPokemonVariantSelection } from '@/utils/pokemonSelection';
 
 const props = defineProps({
   searchQuery: {
@@ -558,6 +561,20 @@ const selectPokemon = (pokemon) => emit('select', {
   ...pokemon,
   image: getListSprite(pokemon.id),
 });
+const selectVariant = (pokemon, variant) => {
+  const selection = createPokemonVariantSelection({
+    species: pokemon,
+    variety: variant,
+    image: getVariantSprite(variant),
+  });
+
+  if (selection) {
+    emit('select', selection);
+    return;
+  }
+
+  selectPokemon(pokemon);
+};
 
 const setPage = (nextPage) => {
   const normalizedPage = Math.min(pageCount.value, Math.max(1, Number(nextPage) || 1));

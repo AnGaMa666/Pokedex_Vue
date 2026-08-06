@@ -332,18 +332,49 @@ export const loadGermanPokemonCatalog = async () => {
   return request;
 };
 
-export const getCatalogLabel = (catalog, id, fallback = '') => {
-  const value = catalog?.get(Number(id));
-
-  if (typeof value === 'string' && value.trim()) return value;
-  if (value && !Array.isArray(value) && typeof value === 'object') {
-    return value.name?.trim()
-      || value.pokemon_name?.trim()
-      || value.form_name?.trim()
-      || value.identifier?.trim()
-      || formatFallbackName(fallback);
+const getCatalogTextValue = (value, depth = 0, seen = new Set()) => {
+  if (typeof value === 'string') return value.trim();
+  if (!value || Array.isArray(value) || typeof value !== 'object' || depth > 3 || seen.has(value)) {
+    return '';
   }
-  return formatFallbackName(fallback);
+
+  seen.add(value);
+  const preferredFields = [
+    'name',
+    'label',
+    'pokemon_name',
+    'form_name',
+    'title',
+    'text',
+    'value',
+    'de',
+    'en',
+  ];
+
+  for (const field of preferredFields) {
+    const text = getCatalogTextValue(value[field], depth + 1, seen);
+    if (text) return text;
+  }
+
+  if (typeof value.identifier === 'string' && value.identifier.trim()) {
+    return formatFallbackName(value.identifier.trim());
+  }
+
+  return '';
+};
+
+export const getCatalogLabel = (catalog, id, fallback = '') => {
+  const numericId = Number(id);
+  const primaryKey = Number.isFinite(numericId) ? numericId : id;
+  const value = typeof catalog?.get === 'function'
+    ? (catalog.get(primaryKey) ?? catalog.get(String(id)))
+    : undefined;
+  const catalogText = getCatalogTextValue(value);
+  if (catalogText) return catalogText;
+
+  const fallbackText = getCatalogTextValue(fallback)
+    || (typeof fallback === 'string' ? fallback.trim() : '');
+  return formatFallbackName(fallbackText);
 };
 
 export const getLocalizedVersionName = (name = '', language = 'en') => (

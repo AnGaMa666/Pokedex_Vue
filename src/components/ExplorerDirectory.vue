@@ -91,10 +91,29 @@
                   {{ labels.accuracy }} {{ formatAccuracy(resource) }}
                 </small>
                 <template v-else>
-                  <small v-if="getResourceCategory(resource)">{{ getResourceCategory(resource) }}</small>
-                  <small class="purchase-price">
-                    {{ labels.purchasePrice }}: {{ formatResourceCost(resource) }}
+                  <small v-if="!getResourceDetails(resource)" class="resource-loading">
+                    {{ labels.detailsLoading }}
                   </small>
+                  <template v-else>
+                    <small v-if="getResourceCategory(resource)">
+                      {{ getResourceCategory(resource) }}
+                    </small>
+                    <span
+                      v-if="getResourcePriceSummaries(resource).length"
+                      class="compact-price-list"
+                    >
+                      <small
+                        v-for="summary in getResourcePriceSummaries(resource)"
+                        :key="summary.currency || 'unspecified-currency'"
+                        class="price-summary-line"
+                      >
+                        <span class="currency-name">{{ summary.currencyLabel }}</span>
+                        <span>{{ labels.purchasePrice }} {{ summary.purchaseLabel }}</span>
+                        <span>{{ labels.salePrice }} {{ summary.sellLabel }}</span>
+                      </small>
+                    </span>
+                    <small v-else class="price-summary-line">{{ labels.noPriceData }}</small>
+                  </template>
                 </template>
               </span>
 
@@ -146,8 +165,8 @@ import {
 } from '@/utils/localization';
 import { getLocalizedItemMetadataName } from '@/utils/itemDetails';
 import {
-  formatItemPrice,
-  getRepresentativeItemPrice,
+  createCompactItemPriceSummaries,
+  getCompactItemPriceSummary,
 } from '@/utils/itemPrices';
 import {
   formatResourceId,
@@ -195,13 +214,15 @@ const sortMode = ref('number');
 const page = ref(1);
 let activeEnrichmentId = 0;
 let activeFilterId = 0;
+const categoryRequestsByName = new Map();
 
 const labels = computed(() => language.value === 'de'
   ? {
       damageClass: 'Schadensart', type: 'Typ', sort: 'Sortierung', all: 'Alle',
       physical: 'Physisch', special: 'Spezial', status: 'Status', number: 'Nummer',
       name: 'Name A–Z', category: 'Kategorie', purchasePrice: 'Einkaufspreis',
-      notPurchasable: 'Nicht verfügbar', priceAscending: 'Einkaufspreis aufsteigend',
+      salePrice: 'Verkaufspreis', noPriceData: 'Keine Preisdaten',
+      detailsLoading: 'Details werden geladen…', priceAscending: 'Einkaufspreis aufsteigend',
       priceDescending: 'Einkaufspreis absteigend', accuracy: 'Genauigkeit',
       loading: 'Verzeichnis wird geladen…', loadError: 'Das Verzeichnis konnte nicht geladen werden.',
       tryAgain: 'Erneut versuchen', noMatches: 'Keine Einträge entsprechen der Suche und den Filtern.',
@@ -210,7 +231,8 @@ const labels = computed(() => language.value === 'de'
   : {
       damageClass: 'Damage class', type: 'Type', sort: 'Sort', all: 'All', physical: 'Physical',
       special: 'Special', status: 'Status', number: 'Number', name: 'Name A–Z', category: 'Category',
-      purchasePrice: 'Purchase price', notPurchasable: 'Unavailable',
+      purchasePrice: 'Purchase price', salePrice: 'Sale price', noPriceData: 'No price data',
+      detailsLoading: 'Loading details…',
       priceAscending: 'Purchase price ascending', priceDescending: 'Purchase price descending',
       accuracy: 'Accuracy', loading: 'Loading directory…', loadError: 'The directory could not be loaded.',
       tryAgain: 'Try again', noMatches: 'No entries match the search and filters.', choose: 'Select:',
@@ -294,14 +316,14 @@ const getResourceCategory = (resource) => {
     kind: 'category',
   });
 };
-const getRepresentativePrice = (resource) => getRepresentativeItemPrice(getResourceDetails(resource) || {});
-const getResourceCost = (resource) => getRepresentativePrice(resource)?.purchasePrice ?? null;
-const formatResourceCost = (resource) => {
-  const price = getRepresentativePrice(resource);
-  return price
-    ? formatItemPrice(price.purchasePrice, price.currency, language.value)
-    : labels.value.notPurchasable;
-};
+const getResourcePriceSummaries = (resource) => createCompactItemPriceSummaries(
+  getResourceDetails(resource) || {},
+  language.value,
+);
+const getResourceCost = (resource) => getCompactItemPriceSummary(
+  getResourceDetails(resource) || {},
+  language.value,
+)?.purchaseAmount ?? null;
 const formatAccuracy = (resource) => {
   const accuracy = getResourceDetails(resource)?.accuracy;
   return accuracy === null || accuracy === undefined ? '—' : `${accuracy}%`;
@@ -315,6 +337,28 @@ const getResourceSprite = (resource) => {
 const getResourceStyle = (resource) => props.kind === 'moves'
   ? { '--move-color': getTypeColor(getResourceType(resource)), '--move-text': getTypeTextColor(getResourceType(resource)) }
   : {};
+
+const loadCategoryDetails = async (categoryName, enrichmentId) => {
+  if (!categoryName || categoryDetailsByName.value[categoryName]) return;
+
+  if (!categoryRequestsByName.has(categoryName)) {
+    categoryRequestsByName.set(categoryName, PokeAPI.getItemCategory(categoryName)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(`Failed to load item category ${categoryName}:`, error);
+        return null;
+      })
+      .finally(() => categoryRequestsByName.delete(categoryName)));
+  }
+
+  const categoryDetails = await categoryRequestsByName.get(categoryName);
+  if (categoryDetails && enrichmentId === activeEnrichmentId) {
+    categoryDetailsByName.value = {
+      ...categoryDetailsByName.value,
+      [categoryName]: categoryDetails,
+    };
+  }
+};
 
 const filteredResources = computed(() => {
   const query = props.searchQuery.trim().toLocaleLowerCase(language.value);
@@ -362,12 +406,7 @@ const enrichResources = async () => {
         if (enrichmentId !== activeEnrichmentId) return;
         resourceDetailsByName.value = { ...resourceDetailsByName.value, [resource.name]: response.data };
         const categoryName = response.data.category?.name;
-        if (categoryName && !categoryDetailsByName.value[categoryName]) {
-          const categoryResponse = await PokeAPI.getItemCategory(categoryName).catch(() => null);
-          if (categoryResponse && enrichmentId === activeEnrichmentId) {
-            categoryDetailsByName.value = { ...categoryDetailsByName.value, [categoryName]: categoryResponse.data };
-          }
-        }
+        await loadCategoryDetails(categoryName, enrichmentId);
       } catch (error) {
         console.error(`Failed to enrich ${props.kind} ${resource.name}:`, error);
       }
@@ -428,6 +467,9 @@ const loadResources = async () => {
   page.value = 1;
   try {
     const response = await config.value.listMethod();
+    categoryDetailsByName.value = Object.fromEntries((response.data.categories || [])
+      .filter((category) => category?.name)
+      .map((category) => [category.name, category]));
     resources.value = response.data.results
       .map((resource) => ({ ...resource, id: getResourceId(resource.url) }))
       .filter((resource) => resource.id !== null)
@@ -475,7 +517,10 @@ onMounted(loadResources);
 .resource-copy { display: grid; min-width: 0; gap: 2px; }
 .resource-copy strong { overflow: hidden; font-size: 0.86rem; text-overflow: ellipsis; white-space: nowrap; }
 .resource-copy small, .resource-number { overflow: hidden; color: var(--legacy-muted); font-size: 0.64rem; text-overflow: ellipsis; white-space: nowrap; }
-.purchase-price { color: var(--legacy-text) !important; font-weight: 750; }
+.resource-loading { color: var(--legacy-muted); font-style: italic; }
+.compact-price-list { display: grid; gap: 2px; min-width: 0; }
+.price-summary-line { display: flex; flex-wrap: wrap; gap: 2px 7px; color: var(--legacy-text) !important; font-weight: 750; line-height: 1.35; white-space: normal !important; }
+.currency-name { color: var(--legacy-muted); font-weight: 650; }
 .resource-arrow { color: var(--legacy-muted); font-size: 1.2rem; }
 .resource-button.move { background: color-mix(in srgb, var(--move-color) 72%, var(--legacy-surface)); color: var(--move-text); }
 .resource-button.move .resource-copy small, .resource-button.move .resource-number, .resource-button.move .resource-arrow { color: currentColor; opacity: 0.78; }

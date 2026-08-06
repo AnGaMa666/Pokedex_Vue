@@ -3,6 +3,10 @@ import {
   getLocalizedName,
   getResourceId,
 } from './resource.js';
+import {
+  getCatalogLabel,
+  getLocalizedVersionName as getCatalogVersionLabel,
+} from '../services/localizationCatalog.js';
 
 const ATTRIBUTE_TRANSLATIONS = {
   de: {
@@ -71,6 +75,7 @@ const CATEGORY_TRANSLATIONS = {
     'curry-ingredients': 'Curry-Zutaten',
     'tera-shard': 'Tera-Stücke',
     'sandwich-ingredients': 'Sandwich-Zutaten',
+    'tm-materials': 'TM-Materialien',
     'picnic': 'Picknick-Items',
   },
 };
@@ -90,7 +95,10 @@ const ROMAN_GENERATIONS = {
 const uniqueNamedResources = (resources = []) => {
   const resourcesByName = new Map();
 
-  for (const resource of resources) {
+  for (const rawResource of resources) {
+    const resource = typeof rawResource === 'string'
+      ? { name: rawResource }
+      : rawResource;
     if (resource?.name && !resourcesByName.has(resource.name)) {
       resourcesByName.set(resource.name, resource);
     }
@@ -100,7 +108,23 @@ const uniqueNamedResources = (resources = []) => {
 };
 
 const getExactLocalizedName = (names = [], language = 'en') => {
-  return names.find((entry) => entry.language?.name === language)?.name || '';
+  if (!Array.isArray(names)) return '';
+
+  const value = names.find((entry) => entry?.language?.name === language)?.name;
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const getMetadataFallbackName = (fallback) => {
+  if (typeof fallback === 'string') return fallback.trim();
+  if (!fallback || Array.isArray(fallback) || typeof fallback !== 'object') return '';
+
+  for (const field of ['name', 'label', 'identifier']) {
+    if (typeof fallback[field] === 'string' && fallback[field].trim()) {
+      return fallback[field].trim();
+    }
+  }
+
+  return '';
 };
 
 export const getLocalizedItemMetadataName = ({
@@ -118,17 +142,18 @@ export const getLocalizedItemMetadataName = ({
   const translationDictionary = kind === 'attribute'
     ? ATTRIBUTE_TRANSLATIONS[language]
     : CATEGORY_TRANSLATIONS[language];
-  const translatedFallback = translationDictionary?.[fallback];
+  const safeFallback = getMetadataFallbackName(fallback);
+  const translatedFallback = translationDictionary?.[safeFallback];
 
   if (translatedFallback) {
     return translatedFallback;
   }
 
   if (language === 'en') {
-    return getLocalizedName(details?.names, fallback, language);
+    return getLocalizedName(details?.names, safeFallback, language);
   }
 
-  return formatResourceName(fallback);
+  return kind === 'attribute' ? 'Weitere Eigenschaft' : 'Sonstige Items';
 };
 
 export const getItemVersionGroupResources = (itemDetails = {}) => {
@@ -136,8 +161,10 @@ export const getItemVersionGroupResources = (itemDetails = {}) => {
     .map((entry) => entry.version_group);
   const machineGroups = (itemDetails.machines || [])
     .map((entry) => entry.version_group);
+  const priceGroups = (itemDetails.prices || [])
+    .map((entry) => entry.version_group);
 
-  return uniqueNamedResources([...flavorTextGroups, ...machineGroups]);
+  return uniqueNamedResources([...flavorTextGroups, ...machineGroups, ...priceGroups]);
 };
 
 export const getHolderVersionResources = (heldByPokemon = []) => {
@@ -164,8 +191,12 @@ export const formatGenerationName = (generationName = '') => {
   return formatResourceName(generationName);
 };
 
-const getLocalizedVersionName = (versionResource, versionsByName, language) => {
+const resolveLocalizedVersionName = (versionResource, versionsByName, language) => {
   const versionDetails = versionsByName[versionResource?.name];
+  if (language === 'de') {
+    const exactName = getExactLocalizedName(versionDetails?.names, 'de');
+    return exactName || getCatalogVersionLabel(versionResource?.name, 'de');
+  }
   return getLocalizedName(versionDetails?.names, versionResource?.name, language);
 };
 
@@ -182,7 +213,7 @@ export const createGameAppearanceRows = ({
     .map((versionGroup) => {
       const games = uniqueNamedResources(versionGroup.versions || []).map((version) => ({
         slug: version.name,
-        name: getLocalizedVersionName(version, versionsByName, language),
+        name: resolveLocalizedVersionName(version, versionsByName, language),
       }));
 
       return {
@@ -207,6 +238,7 @@ export const getPokemonSpriteUrl = (pokemonResource = {}) => {
 
 export const createHeldPokemonRows = ({
   heldByPokemon = [],
+  localizedNamesById = null,
   speciesByName = {},
   versionsByName = {},
   language = 'en',
@@ -216,16 +248,15 @@ export const createHeldPokemonRows = ({
   return heldByPokemon
     .map((holder) => {
       const pokemonName = holder.pokemon?.name || '';
+      const pokemonId = getResourceId(holder.pokemon?.url);
       const speciesDetails = speciesByName[pokemonName];
-      const localizedPokemonName = getLocalizedName(
-        speciesDetails?.names,
-        pokemonName,
-        language,
-      );
+      const localizedPokemonName = language === 'de' && localizedNamesById
+        ? getCatalogLabel(localizedNamesById, pokemonId, pokemonName)
+        : getLocalizedName(speciesDetails?.names, pokemonName, language);
       const versions = (holder.version_details || [])
         .map((versionDetail) => ({
           slug: versionDetail.version?.name || '',
-          name: getLocalizedVersionName(
+          name: resolveLocalizedVersionName(
             versionDetail.version,
             versionsByName,
             language,
@@ -237,7 +268,7 @@ export const createHeldPokemonRows = ({
         });
 
       return {
-        id: getResourceId(holder.pokemon?.url),
+        id: pokemonId,
         slug: pokemonName,
         name: localizedPokemonName,
         spriteUrl: getPokemonSpriteUrl(holder.pokemon),

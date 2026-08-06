@@ -136,17 +136,21 @@ const loadDetails = async () => {
   details.value = null;
   itemDetails.value = null;
   const berryName = props.resource.name.replace(/-berry$/, '');
-  const itemName = `${berryName}-berry`;
 
   try {
-    const [berryResult, itemResult] = await Promise.allSettled([
-      PokeAPI.getBerryDetails(berryName),
-      PokeAPI.getItemDetails(itemName),
-    ]);
+    const berryResponse = await PokeAPI.getBerryDetails(berryName);
     if (requestId !== activeRequestId) return;
-    if (berryResult.status === 'rejected') throw berryResult.reason;
-    details.value = berryResult.value.data;
-    itemDetails.value = itemResult.status === 'fulfilled' ? itemResult.value.data : null;
+
+    details.value = berryResponse.data;
+    const itemName = berryResponse.data.item?.name || `${berryName}-berry`;
+    const itemResponse = await PokeAPI.getItemDetails(itemName).catch((requestError) => {
+      console.error(`Failed to load the item data for ${berryName}:`, requestError);
+      return null;
+    });
+
+    if (requestId === activeRequestId) {
+      itemDetails.value = itemResponse?.data || null;
+    }
   } catch (requestError) {
     if (requestId === activeRequestId) {
       console.error('Failed to load berry details:', requestError);
@@ -158,7 +162,6 @@ const loadDetails = async () => {
 };
 
 watch(() => props.resource.name, loadDetails, { immediate: true });
-watch(language, loadDetails);
 </script>
 
 <style scoped>

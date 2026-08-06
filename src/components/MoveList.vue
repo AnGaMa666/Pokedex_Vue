@@ -17,7 +17,7 @@
     <div class="move-controls" :aria-label="labels.filters">
       <label class="version-control">
         <span>{{ labels.gameGroup }}</span>
-        <select v-model="selectedVersionGroup">
+        <select v-model="selectedVersionGroup" @change="versionSelectionTouched = true">
           <optgroup
             v-for="section in versionGroupSections"
             :key="section.generation"
@@ -104,15 +104,17 @@
           <span class="move-values">
             <small>{{ labels.power }}: {{ move.power ?? '—' }}</small>
             <small>{{ labels.accuracy }}: {{ move.accuracy === null ? '—' : `${move.accuracy}%` }}</small>
+            <small>{{ labels.pp }}: {{ move.pp ?? '—' }}</small>
           </span>
 
           <span class="learn-methods">
             <span
-              v-for="learning in move.learning"
-              :key="`${move.name}-${learning.method}-${learning.level}`"
+              v-for="(learning, learningIndex) in move.learning"
+              :key="`${move.name}-${learning.versionGroup}-${learning.method}-${learning.level}-${learningIndex}`"
               class="learn-chip"
             >
-              {{ formatLearning(learning) }}
+              <strong>{{ formatLearning(learning) }}</strong>
+              <small>{{ getVersionGroupLabel(learning.versionGroup, language) }}</small>
             </span>
           </span>
         </button>
@@ -122,11 +124,15 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
-  getCatalogLabel,
   loadGermanPokemonCatalog,
 } from '@/services/localizationCatalog';
 import { useActivePokemonForm } from '@/state/activePokemonForm';
@@ -135,10 +141,19 @@ import {
   getLocalizedTypeName,
   getTypeTextColor,
 } from '@/utils/localization';
-import { getLocalizedName, getResourceId } from '@/utils/resource';
+import {
+  formatResourceName,
+  getLocalizedName,
+  getResourceId,
+} from '@/utils/resource';
+import {
+  getPokemonFormLabel,
+  isPokemonForSpecies,
+} from '@/utils/pokemonForms';
 import { getTypeIconDataUri } from '@/utils/typeIcons';
 import {
   getLatestVersionGroupName,
+  getVersionGroupLabel,
   groupVersionGroupsByGeneration,
 } from '@/utils/versionGroups';
 
@@ -163,6 +178,8 @@ const TYPE_COLORS = {
 
 const MAX_PARALLEL_REQUESTS = 8;
 const moveDetailsByName = ref({});
+const versionGroupDetailsByName = ref({});
+const learnMethodDetailsByName = ref({});
 const pokemonCatalog = ref(new Map());
 const loadingDetails = ref(false);
 const selectedVersionGroup = ref('');
@@ -170,7 +187,10 @@ const selectedDamageClass = ref('');
 const selectedLearnMethod = ref('');
 const selectedType = ref('');
 const sortMode = ref('name');
+const versionSelectionTouched = ref(false);
 let activeLoadId = 0;
+let activeVersionGroupLoadId = 0;
+let activeLearnMethodLoadId = 0;
 
 const labels = computed(() => language.value === 'de'
   ? {
@@ -185,10 +205,14 @@ const labels = computed(() => language.value === 'de'
       sortType: 'Typ', sortPower: 'Stärke absteigend',
       loading: 'Attackendetails werden geladen…',
       noMatches: 'Keine Attacke entspricht den gewählten Filtern.',
-      open: 'öffnen', power: 'Stärke', accuracy: 'Genauigkeit', level: 'Level',
+      open: 'öffnen', power: 'Stärke', accuracy: 'Genauigkeit', pp: 'AP', level: 'Level',
       machine: 'TM / VM / TR', tutor: 'Attacken-Lehrer', egg: 'Zucht',
       lightBallEgg: 'Zucht mit Kugelblitz', formChange: 'Formwechsel',
-      levelUp: 'Levelaufstieg', other: 'Andere Methode',
+      levelUp: 'Levelaufstieg', evolution: 'Entwicklung', reminder: 'Attacken-Erinnerer',
+      stadiumSurfing: 'Surfer-Pikachu (Pokémon Stadium)', colosseumPurification: 'Erlösung (Pokémon Colosseum)',
+      xdShadow: 'Crypto-Attacke (Pokémon XD)', xdPurification: 'Erlösung (Pokémon XD)',
+      zygardeCube: 'Zygarde-Würfel', event: 'Event', specialMethod: 'Spezielle Lernmethode',
+      other: 'Andere Lernmethode',
     }
   : {
       title: 'Moves', subtitle: 'Learning method and timing by generation and game group',
@@ -198,17 +222,23 @@ const labels = computed(() => language.value === 'de'
       sortName: 'Name A–Z', sortLevel: 'Level ascending', sortDamageClass: 'Damage class',
       sortType: 'Type', sortPower: 'Power descending',
       loading: 'Loading move details…', noMatches: 'No move matches the selected filters.',
-      open: 'open', power: 'Power', accuracy: 'Accuracy', level: 'Level',
+      open: 'open', power: 'Power', accuracy: 'Accuracy', pp: 'PP', level: 'Level',
       machine: 'TM / HM / TR', tutor: 'Move Tutor', egg: 'Breeding',
       lightBallEgg: 'Light Ball breeding', formChange: 'Form change',
-      levelUp: 'Level up', other: 'Other method',
+      levelUp: 'Level up', evolution: 'Evolution', reminder: 'Move reminder',
+      stadiumSurfing: 'Surfing Pikachu (Pokémon Stadium)', colosseumPurification: 'Purification (Pokémon Colosseum)',
+      xdShadow: 'Shadow move (Pokémon XD)', xdPurification: 'Purification (Pokémon XD)',
+      zygardeCube: 'Zygarde Cube', event: 'Event', specialMethod: 'Special learn method',
+      other: 'Other learn method',
     });
 
 const effectivePokemonDetails = computed(() => {
   const active = activePokemonForm.value;
-  const activeSpecies = active?.species?.name;
-  const propSpecies = props.pokemonDetails?.species?.name;
-  return active && activeSpecies && activeSpecies === propSpecies
+  const species = {
+    id: getResourceId(props.pokemonDetails?.species?.url),
+    name: props.pokemonDetails?.species?.name,
+  };
+  return active && isPokemonForSpecies(active, species)
     ? active
     : props.pokemonDetails;
 });
@@ -216,10 +246,12 @@ const effectivePokemonDetails = computed(() => {
 const formLabel = computed(() => {
   const details = effectivePokemonDetails.value;
   if (!details) return '';
-  if (language.value === 'de') {
-    return getCatalogLabel(pokemonCatalog.value, details.id, details.name);
-  }
-  return getLocalizedName(details.forms?.[0]?.names, details.name, 'en');
+  return getPokemonFormLabel({
+    details,
+    species: { name: details.species?.name },
+    catalog: pokemonCatalog.value,
+    language: language.value,
+  });
 });
 
 const moveEntries = computed(() => {
@@ -235,7 +267,7 @@ const moveEntries = computed(() => {
   return [...uniqueMoves.values()];
 });
 
-const versionGroupOptions = computed(() => {
+const rawVersionGroupOptions = computed(() => {
   const groupsByName = new Map();
   for (const move of moveEntries.value) {
     for (const detail of move.versionGroupDetails) {
@@ -250,6 +282,16 @@ const versionGroupOptions = computed(() => {
   }
   return [...groupsByName.values()];
 });
+
+const versionGroupOptions = computed(() => rawVersionGroupOptions.value.map((group) => {
+  const details = versionGroupDetailsByName.value[group.name];
+  return {
+    ...group,
+    id: details?.id || group.id,
+    order: details?.order,
+    generation: details?.generation,
+  };
+}));
 
 const versionGroupSections = computed(() => groupVersionGroupsByGeneration(
   versionGroupOptions.value,
@@ -267,6 +309,7 @@ const getLearningForMove = (move) => move.versionGroupDetails
   .map((detail) => ({
     method: detail.move_learn_method?.name || 'other',
     level: detail.level_learned_at ?? 0,
+    versionGroup: detail.version_group?.name || selectedVersionGroup.value,
   }));
 
 const enrichedMoves = computed(() => relevantMoveEntries.value
@@ -279,6 +322,7 @@ const enrichedMoves = computed(() => relevantMoveEntries.value
       damageClass: details?.damage_class?.name || 'status',
       power: details?.power ?? null,
       accuracy: details?.accuracy ?? null,
+      pp: details?.pp ?? null,
       learning: getLearningForMove(move),
     };
   })
@@ -332,18 +376,102 @@ const displayedMoves = computed(() => {
 
 const getMoveTypeColor = (type) => TYPE_COLORS[type] || '#94a3b8';
 const getDamageClassLabel = (damageClass) => getLocalizedDamageClassName(damageClass, language.value);
-const formatLearnMethod = (method) => ({
-  'level-up': labels.value.levelUp,
-  machine: labels.value.machine,
-  tutor: labels.value.tutor,
-  egg: labels.value.egg,
-  'light-ball-egg': labels.value.lightBallEgg,
-  'form-change': labels.value.formChange,
-})[method] || labels.value.other;
+const formatLearnMethod = (method) => {
+  const mappedLabel = ({
+    'level-up': labels.value.levelUp,
+    machine: labels.value.machine,
+    tutor: labels.value.tutor,
+    egg: labels.value.egg,
+    'light-ball-egg': labels.value.lightBallEgg,
+    'form-change': labels.value.formChange,
+    evolution: labels.value.evolution,
+    'move-reminder': labels.value.reminder,
+    'stadium-surfing-pikachu': labels.value.stadiumSurfing,
+    'colosseum-purification': labels.value.colosseumPurification,
+    'xd-shadow': labels.value.xdShadow,
+    'xd-purification': labels.value.xdPurification,
+    'zygarde-cube': labels.value.zygardeCube,
+    event: labels.value.event,
+    special: labels.value.specialMethod,
+    other: labels.value.other,
+  })[method];
+  if (mappedLabel) return mappedLabel;
+
+  const localizedName = learnMethodDetailsByName.value[method]?.names?.find((entry) => (
+    entry.language?.name === language.value
+  ))?.name;
+  return localizedName || formatResourceName(method);
+};
 const formatLearning = (learning) => learning.method === 'level-up'
-  ? `${labels.value.level} ${learning.level}`
+  ? `${formatLearnMethod(learning.method)} · ${labels.value.level} ${learning.level}`
   : formatLearnMethod(learning.method);
 const openMove = (move) => emit('openResource', { kind: 'moves', name: move.name });
+
+const loadLearnMethodDetails = async () => {
+  const loadId = ++activeLearnMethodLoadId;
+  const missingMethods = availableLearnMethods.value.filter((method) => (
+    !learnMethodDetailsByName.value[method]
+  ));
+  if (!missingMethods.length) return;
+
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < missingMethods.length) {
+      const method = missingMethods[nextIndex];
+      nextIndex += 1;
+      try {
+        const response = await PokeAPI.getMoveLearnMethod(method);
+        if (loadId !== activeLearnMethodLoadId) return;
+        learnMethodDetailsByName.value = {
+          ...learnMethodDetailsByName.value,
+          [method]: response.data,
+        };
+      } catch (error) {
+        console.error(`Failed to load move learn method ${method}:`, error);
+      }
+    }
+  };
+
+  await Promise.all(Array.from(
+    { length: Math.min(MAX_PARALLEL_REQUESTS, missingMethods.length) },
+    worker,
+  ));
+};
+
+const loadVersionGroupDetails = async () => {
+  const loadId = ++activeVersionGroupLoadId;
+  const missingGroups = rawVersionGroupOptions.value.filter((group) => (
+    !versionGroupDetailsByName.value[group.name]
+  ));
+  if (!missingGroups.length) return;
+
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < missingGroups.length) {
+      const group = missingGroups[nextIndex];
+      nextIndex += 1;
+      try {
+        const response = await PokeAPI.getVersionGroupDetails(group.name);
+        if (loadId !== activeVersionGroupLoadId) return;
+        versionGroupDetailsByName.value = {
+          ...versionGroupDetailsByName.value,
+          [group.name]: response.data,
+        };
+      } catch (error) {
+        console.error(`Failed to load version group ${group.name}:`, error);
+      }
+    }
+  };
+
+  await Promise.all(Array.from(
+    { length: Math.min(MAX_PARALLEL_REQUESTS, missingGroups.length) },
+    worker,
+  ));
+
+  if (loadId === activeVersionGroupLoadId && !versionSelectionTouched.value) {
+    selectedVersionGroup.value = getLatestVersionGroupName(versionGroupOptions.value);
+  }
+};
 
 const loadMoveDetails = async () => {
   const loadId = ++activeLoadId;
@@ -386,6 +514,7 @@ const resetForPokemonForm = () => {
   selectedLearnMethod.value = '';
   selectedType.value = '';
   sortMode.value = 'name';
+  versionSelectionTouched.value = false;
   selectedVersionGroup.value = getLatestVersionGroupName(versionGroupOptions.value);
 };
 
@@ -393,6 +522,7 @@ watch(
   () => effectivePokemonDetails.value?.name,
   () => {
     resetForPokemonForm();
+    void loadVersionGroupDetails();
     void loadMoveDetails();
   },
   { immediate: true },
@@ -403,6 +533,22 @@ watch(versionGroupOptions, (groups) => {
     selectedVersionGroup.value = getLatestVersionGroupName(groups);
   }
 }, { immediate: true });
+
+watch(
+  () => rawVersionGroupOptions.value.map((group) => group.name).join('|'),
+  () => {
+    void loadVersionGroupDetails();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => availableLearnMethods.value.join('|'),
+  () => {
+    void loadLearnMethodDetails();
+  },
+  { immediate: true },
+);
 
 watch(selectedVersionGroup, () => {
   selectedDamageClass.value = '';
@@ -420,6 +566,12 @@ watch(language, async () => {
     }
   }
 }, { immediate: true });
+
+onBeforeUnmount(() => {
+  activeLoadId += 1;
+  activeVersionGroupLoadId += 1;
+  activeLearnMethodLoadId += 1;
+});
 </script>
 
 <style scoped>
@@ -435,8 +587,8 @@ watch(language, async () => {
 .move-controls select { min-width: 0; width: 100%; min-height: 33px; padding: 5px 7px; border: 1px solid var(--legacy-border); border-radius: 4px; color: var(--legacy-text); background: var(--legacy-page); font-size: 0.72rem; }
 .move-status { margin: 0; padding: 18px; color: var(--legacy-muted); }
 .move-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; max-height: calc(100vh - 374px); padding: 9px; margin: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
-.move-list > li { content-visibility: auto; contain-intrinsic-size: 118px; }
-.move-item { display: grid; gap: 7px; width: 100%; min-width: 0; min-height: 112px; align-content: start; padding: 9px; border: 1px solid rgba(51, 51, 51, 0.22); border-radius: 4px; overflow-wrap: anywhere; text-align: left; cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.move-list > li { content-visibility: auto; contain-intrinsic-size: 142px; }
+.move-item { display: grid; gap: 7px; width: 100%; min-width: 0; min-height: 136px; align-content: start; padding: 9px; border: 1px solid rgba(51, 51, 51, 0.22); border-radius: 4px; overflow-wrap: anywhere; text-align: left; cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
 .move-item:hover { filter: brightness(0.96); }
 .move-item:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .move-title-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 7px; align-items: center; }
@@ -448,7 +600,9 @@ watch(language, async () => {
 .move-values { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
 .move-values small { font-size: 0.62rem; font-weight: 800; opacity: 0.84; }
 .learn-methods { display: flex; flex-wrap: wrap; gap: 4px; }
-.learn-chip { padding: 3px 5px; border-radius: 3px; color: #f8fafc; font-size: 0.55rem; font-weight: 850; background: rgba(17, 24, 39, 0.8); }
+.learn-chip { display: grid; gap: 1px; padding: 4px 6px; border-radius: 3px; color: #f8fafc; font-size: 0.55rem; font-weight: 850; background: rgba(17, 24, 39, 0.8); }
+.learn-chip strong { font-size: 0.57rem; }
+.learn-chip small { font-size: 0.5rem; font-weight: 650; opacity: 0.86; }
 @media (max-width: 1380px) { .pokemon-moves { position: static; max-height: none; } .move-list { max-height: 640px; } }
 @media (max-width: 560px) { .move-list, .move-controls { grid-template-columns: 1fr; } .move-controls label, .move-controls .version-control { grid-column: 1; } }
 </style>

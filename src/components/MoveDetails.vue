@@ -48,57 +48,67 @@
         <p>{{ flavorText }}</p>
       </section>
 
-      <section class="secondary-section availability-section">
-        <div class="availability-heading">
-          <div>
-            <h3>{{ labels.availability }}</h3>
-            <p>{{ labels.learnedBy.replace('{count}', learnerRows.length) }}</p>
+      <details class="secondary-section availability-section">
+        <summary>
+          <span>
+            <strong>{{ labels.availability }}</strong>
+            <small>{{ labels.learnedBy.replace('{count}', learnerRows.length) }}</small>
+          </span>
+        </summary>
+
+        <div class="availability-content">
+          <div class="availability-heading">
+            <label v-if="learnerRows.length > 12" class="learner-search">
+              <span>{{ labels.searchLearners }}</span>
+              <input v-model="learnerQuery" type="search" :placeholder="labels.searchLearners">
+            </label>
           </div>
-          <label v-if="learnerRows.length > 12" class="learner-search">
-            <span class="visually-hidden">{{ labels.searchLearners }}</span>
-            <input v-model="learnerQuery" type="search" :placeholder="labels.searchLearners">
-          </label>
+
+          <p v-if="learnerRows.length === 0" class="empty-learners">{{ labels.noLearners }}</p>
+          <p v-else-if="filteredLearners.length === 0" class="empty-learners">{{ labels.noMatches }}</p>
+
+          <div v-else class="learner-grid">
+            <article v-for="pokemon in visibleLearners" :key="pokemon.id" class="learner-card">
+              <img
+                :src="pokemon.sprite"
+                :alt="pokemon.label"
+                width="64"
+                height="64"
+                loading="lazy"
+                decoding="async"
+              >
+              <div>
+                <small>#{{ formatResourceId(pokemon.number) }} · {{ pokemon.isDefault ? labels.standardForm : labels.form }}</small>
+                <strong>{{ pokemon.label }}</strong>
+              </div>
+            </article>
+          </div>
+
+          <button
+            v-if="filteredLearners.length > learnerLimit"
+            type="button"
+            class="show-more-button"
+            @click="learnerLimit += LEARNER_PAGE_SIZE"
+          >
+            {{ labels.showMore }} ({{ visibleLearners.length }} / {{ filteredLearners.length }})
+          </button>
         </div>
-
-        <p v-if="learnerRows.length === 0" class="empty-learners">{{ labels.noLearners }}</p>
-        <p v-else-if="filteredLearners.length === 0" class="empty-learners">{{ labels.noMatches }}</p>
-
-        <div v-else class="learner-grid">
-          <article v-for="pokemon in visibleLearners" :key="pokemon.name" class="learner-card">
-            <img
-              :src="pokemon.sprite"
-              :alt="pokemon.label"
-              width="64"
-              height="64"
-              loading="lazy"
-              decoding="async"
-            >
-            <div>
-              <small v-if="pokemon.id">#{{ formatResourceId(pokemon.id) }}</small>
-              <strong>{{ pokemon.label }}</strong>
-            </div>
-          </article>
-        </div>
-
-        <button
-          v-if="filteredLearners.length > learnerLimit"
-          type="button"
-          class="show-more-button"
-          @click="learnerLimit += LEARNER_PAGE_SIZE"
-        >
-          {{ labels.showMore }} ({{ visibleLearners.length }} / {{ filteredLearners.length }})
-        </button>
-      </section>
+      </details>
     </template>
   </article>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
-  getCatalogLabel,
+  loadGermanCatalog,
   loadGermanPokemonCatalog,
 } from '@/services/localizationCatalog';
 import {
@@ -109,12 +119,11 @@ import {
 } from '@/utils/localization';
 import {
   formatResourceId,
-  formatResourceName,
   getLocalizedFlavorText,
   getLocalizedMoveDescription,
   getLocalizedName,
-  getResourceId,
 } from '@/utils/resource';
+import { buildMoveLearnerRows } from '@/utils/pokemonForms';
 import { getTypeColor } from '@/utils/typeColors';
 import { getTypeIconDataUri } from '@/utils/typeIcons';
 
@@ -129,6 +138,7 @@ const { language } = useI18n();
 const LEARNER_PAGE_SIZE = 30;
 const details = ref(null);
 const pokemonCatalog = ref(new Map());
+const pokemonIndex = ref(new Map());
 const loading = ref(false);
 const errorMessage = ref('');
 const learnerQuery = ref('');
@@ -143,6 +153,7 @@ const labels = computed(() => language.value === 'de'
       learnedBy: '{count} Pokémon und Formen können diese Attacke erlernen.',
       searchLearners: 'Pokémon durchsuchen', noLearners: 'Für diese Attacke sind keine erlernenden Pokémon hinterlegt.',
       noMatches: 'Kein Pokémon entspricht der Suche.', showMore: 'Weitere Pokémon anzeigen',
+      standardForm: 'Standardform', form: 'Form',
       loadError: 'Die Attackendetails konnten nicht geladen werden.',
     }
   : {
@@ -152,6 +163,7 @@ const labels = computed(() => language.value === 'de'
       learnedBy: '{count} Pokémon and forms can learn this move.', searchLearners: 'Search Pokémon',
       noLearners: 'No Pokémon are listed for this move.', noMatches: 'No Pokémon matches the search.',
       showMore: 'Show more Pokémon', loadError: 'The move details could not be loaded.',
+      standardForm: 'Default form', form: 'Form',
     });
 
 const typeColor = computed(() => getTypeColor(details.value?.type?.name));
@@ -165,24 +177,12 @@ const effectDescription = computed(() => getLocalizedMoveDescription({
 }));
 const showFlavorText = computed(() => Boolean(flavorText.value && flavorText.value !== effectDescription.value));
 
-const learnerRows = computed(() => (details.value?.learned_by_pokemon || [])
-  .map((pokemon) => {
-    const id = getResourceId(pokemon.url);
-    return {
-      id,
-      name: pokemon.name,
-      label: language.value === 'de'
-        ? getCatalogLabel(pokemonCatalog.value, id, pokemon.name)
-        : formatResourceName(pokemon.name),
-      sprite: id
-        ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`
-        : '',
-    };
-  })
-  .sort((first, second) => first.label.localeCompare(
-    second.label,
-    language.value === 'de' ? 'de-DE' : 'en-US',
-  )));
+const learnerRows = computed(() => buildMoveLearnerRows({
+  learnedByPokemon: details.value?.learned_by_pokemon || [],
+  pokemonIndex: pokemonIndex.value,
+  pokemonCatalog: pokemonCatalog.value,
+  language: language.value,
+}));
 
 const filteredLearners = computed(() => {
   const query = learnerQuery.value.trim().toLocaleLowerCase(language.value);
@@ -190,7 +190,8 @@ const filteredLearners = computed(() => {
   return learnerRows.value.filter((pokemon) => (
     pokemon.name.includes(query)
     || pokemon.label.toLocaleLowerCase(language.value).includes(query)
-    || String(pokemon.id || '').includes(query)
+    || String(pokemon.number || '').includes(query)
+    || String(pokemon.pokemonId || '').includes(query)
   ));
 });
 const visibleLearners = computed(() => filteredLearners.value.slice(0, learnerLimit.value));
@@ -209,14 +210,16 @@ const loadDetails = async () => {
   learnerLimit.value = LEARNER_PAGE_SIZE;
 
   try {
-    const [moveResult, catalogResult] = await Promise.allSettled([
+    const [moveResult, catalogResult, indexResult] = await Promise.allSettled([
       PokeAPI.getMoveDetails(props.resource.name),
       language.value === 'de' ? loadGermanPokemonCatalog() : Promise.resolve(new Map()),
+      loadGermanCatalog('pokemonIndex'),
     ]);
     if (requestId !== activeRequestId) return;
     if (moveResult.status === 'rejected') throw moveResult.reason;
     details.value = moveResult.value.data;
     pokemonCatalog.value = catalogResult.status === 'fulfilled' ? catalogResult.value : new Map();
+    pokemonIndex.value = indexResult.status === 'fulfilled' ? indexResult.value : new Map();
   } catch (requestError) {
     if (requestId === activeRequestId) {
       console.error('Failed to load move details:', requestError);
@@ -230,6 +233,7 @@ const loadDetails = async () => {
 watch(() => props.resource.name, loadDetails, { immediate: true });
 watch(language, loadDetails);
 watch(learnerQuery, () => { learnerLimit.value = LEARNER_PAGE_SIZE; });
+onBeforeUnmount(() => { activeRequestId += 1; });
 </script>
 
 <style scoped>
@@ -254,7 +258,14 @@ watch(learnerQuery, () => { learnerLimit.value = LEARNER_PAGE_SIZE; });
 .secondary-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--legacy-border); }
 .secondary-section h3 { margin: 0 0 8px; font-size: 1rem; }
 .secondary-section p { margin: 0; color: var(--legacy-muted); line-height: 1.6; }
+.availability-section summary { padding: 12px; border: 1px solid var(--legacy-border); color: var(--legacy-text); cursor: pointer; background: var(--legacy-page); }
+.availability-section summary::marker { color: var(--resource-color); }
+.availability-section summary > span { display: inline-grid; gap: 3px; margin-left: 4px; vertical-align: middle; }
+.availability-section summary strong { font-size: 1rem; }
+.availability-section summary small { color: var(--legacy-muted); font-size: 0.72rem; font-weight: 650; }
+.availability-content { padding-top: 14px; }
 .availability-heading { display: flex; gap: 14px; justify-content: space-between; align-items: end; }
+.learner-search { display: grid; gap: 4px; width: min(100%, 360px); color: var(--legacy-muted); font-size: 0.72rem; font-weight: 800; }
 .learner-search input { min-height: 38px; padding: 7px 9px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); }
 .learner-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 14px; }
 .learner-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 9px; align-items: center; min-height: 82px; padding: 8px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
@@ -263,7 +274,6 @@ watch(learnerQuery, () => { learnerLimit.value = LEARNER_PAGE_SIZE; });
 .learner-card small { color: var(--legacy-muted); font-size: 0.62rem; }
 .learner-card strong { overflow: hidden; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
 .empty-learners { margin-top: 12px !important; }
-.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 680px) { .detail-card { min-height: 0; padding: 12px; } .detail-header { gap: 12px; padding: 12px; } .move-symbol { width: 66px; height: 66px; } .move-symbol img { width: 56px; height: 56px; } .facts-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .availability-heading { align-items: stretch; flex-direction: column; } .learner-search input { width: 100%; } }
 @media (max-width: 360px) { .facts-grid, .learner-grid { grid-template-columns: 1fr; } }
 </style>

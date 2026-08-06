@@ -21,4 +21,8 @@ test('footer documents privacy, rights, sources and disclaimer information', asy
   assert.match(footer, /raw\.githubusercontent\.com/);
   assert.match(footer, /maximal sieben Tagen/);
   assert.match(footer, /keine eigene Reichweitenanalyse/);
+  assert.match(footer, /stammen überwiegend aus PokéAPI/);
+  assert.match(footer, /je Spielversion abweichen/);
+  assert.match(footer, /historische oder editionsspezifische Informationen können unvollständig sein/);
+  assert.match(footer, /Garantie für Vollständigkeit und Fehlerfreiheit/);
 });

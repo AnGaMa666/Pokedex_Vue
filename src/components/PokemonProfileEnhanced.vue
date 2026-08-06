@@ -4,12 +4,14 @@
       :pokemon="pokemon"
       :is-shiny="isShiny"
       :sprite-mode="spriteMode"
-      @details-loaded="emit('detailsLoaded', $event)"
+      @details-loaded="handleDetailsLoaded"
       @open-resource="emit('openResource', $event)"
     />
 
     <EvolutionRequirements
-      :pokemon="pokemon"
+      v-if="evolutionSpecies"
+      :pokemon="evolutionSpecies"
+      :active-pokemon="loadedDetails"
       :is-shiny="isShiny"
       :sprite-mode="spriteMode"
       @open-resource="emit('openResource', $event)"
@@ -18,10 +20,15 @@
 </template>
 
 <script setup>
+import {
+  computed,
+  ref,
+  watch,
+} from 'vue';
 import EvolutionRequirements from './EvolutionRequirements.vue';
 import PokemonProfile from './PokemonProfile.vue';
 
-defineProps({
+const props = defineProps({
   pokemon: {
     type: Object,
     required: true,
@@ -37,6 +44,20 @@ defineProps({
 });
 
 const emit = defineEmits(['detailsLoaded', 'openResource']);
+const loadedDetails = ref(null);
+const evolutionSpecies = computed(() => {
+  const species = loadedDetails.value?.species;
+  return species?.name ? { name: species.name, url: species.url } : null;
+});
+
+const handleDetailsLoaded = (details) => {
+  loadedDetails.value = details;
+  emit('detailsLoaded', details);
+};
+
+watch(() => props.pokemon?.name, () => {
+  loadedDetails.value = null;
+});
 </script>
 
 <style scoped>

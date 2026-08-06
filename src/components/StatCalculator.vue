@@ -24,7 +24,7 @@
         <span>{{ labels.form }}</span>
         <select v-model="selectedFormName" :disabled="loadingForms || formOptions.length < 2">
           <option v-for="option in formOptions" :key="option.name" :value="option.name">
-            {{ option.label }}
+            {{ option.label }} · {{ option.isDefault ? labels.standardForm : labels.variantForm }}
           </option>
         </select>
         <small v-if="loadingForms">{{ labels.loadingForms }}</small>
@@ -118,11 +118,14 @@ import {
 } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
-import {
-  getCatalogLabel,
-  loadGermanPokemonCatalog,
-} from '@/services/localizationCatalog';
+import { loadGermanPokemonCatalog } from '@/services/localizationCatalog';
 import { useActivePokemonForm } from '@/state/activePokemonForm';
+import {
+  createPokemonVarietyOptions,
+  getDefaultPokemonVariety,
+  isPokemonForSpecies,
+  mapWithConcurrency,
+} from '@/utils/pokemonForms';
 import {
   BATTLE_STATS,
   NATURES,
@@ -131,7 +134,6 @@ import {
   getTotalEvs,
   normalizeBaseStats,
 } from '@/utils/statCalculator';
-import { formatResourceName } from '@/utils/resource';
 
 const props = defineProps({
   pokemonDetails: {
@@ -141,7 +143,12 @@ const props = defineProps({
 });
 
 const { language } = useI18n();
-const { setActivePokemonForm, clearActivePokemonForm } = useActivePokemonForm();
+const {
+  activePokemonForm,
+  resetActivePokemonForm,
+  setActivePokemonForm,
+  setDefaultPokemonForm,
+} = useActivePokemonForm();
 const MAX_PARALLEL_REQUESTS = 6;
 const level = ref(50);
 const nature = ref('hardy');
@@ -175,6 +182,8 @@ const labels = computed(() => language.value === 'de'
       competitive: 'Werteplanung',
       title: 'EV-, IV-/DV- und Wesen-Rechner',
       form: 'Pokémon-Form',
+      standardForm: 'Standardform',
+      variantForm: 'Form',
       formHint: 'Die Auswahl ändert Basiswerte und erlernbare Attacken auf genau diese Form.',
       loadingForms: 'Weitere Formen werden geladen…',
       baseTotal: 'Basiswertsumme',
@@ -190,12 +199,14 @@ const labels = computed(() => language.value === 'de'
       evTotal: 'Verteilte EV',
       evTooHigh: 'Die zulässige Gesamtgrenze von 510 EV ist überschritten.',
       evHint: 'Standard: Level 50, 0 IV/DV und 0 EV. Pro Statuswert zählen höchstens 252 EV.',
-      formulaNote: 'Die Basiswerte der ausgewählten Form werden vollständig in die Hauptspiel-Formel eingerechnet.',
+      formulaNote: 'Die Basiswerte der ausgewählten Form werden vollständig in die Hauptspiel-Formel eingerechnet. IV/DV und EV starten bewusst bei 0.',
     }
   : {
       competitive: 'Stat planning',
       title: 'EV, IV/DV and nature calculator',
       form: 'Pokémon form',
+      standardForm: 'Default form',
+      variantForm: 'Form',
       formHint: 'The selection changes base stats and learnable moves to this exact form.',
       loadingForms: 'Loading additional forms…',
       baseTotal: 'Base stat total',
@@ -211,7 +222,7 @@ const labels = computed(() => language.value === 'de'
       evTotal: 'Allocated EVs',
       evTooHigh: 'The legal total limit of 510 EVs has been exceeded.',
       evHint: 'Default: level 50, 0 IV/DV and 0 EV. Each stat accepts up to 252 EVs.',
-      formulaNote: 'The selected form’s base stats are fully included in the main-series formula.',
+      formulaNote: 'The selected form’s base stats are fully included in the main-series formula. IV/DV and EV intentionally start at 0.',
     });
 
 const statNames = BATTLE_STATS;
@@ -264,49 +275,55 @@ const resetTrainingValues = () => {
 const resetCalculator = () => {
   level.value = 50;
   nature.value = 'hardy';
-  selectedFormName.value = props.pokemonDetails.name;
   resetTrainingValues();
+  const defaultDetails = resetActivePokemonForm()
+    || getDefaultPokemonVariety(formOptions.value)?.details
+    || props.pokemonDetails;
+  selectedFormName.value = defaultDetails.name;
+  setActivePokemonForm(defaultDetails);
 };
 
 const loadFormOptions = async ({ preserveSelection = false } = {}) => {
   const requestId = ++formRequestId;
   const currentDetails = props.pokemonDetails;
-  const previousSelection = preserveSelection ? selectedFormName.value : currentDetails.name;
+  const globallyActiveDetails = activePokemonForm.value;
+  const previousSelection = preserveSelection && globallyActiveDetails?.species?.name === currentDetails.species?.name
+    ? globallyActiveDetails.name
+    : currentDetails.name;
   selectedFormName.value = previousSelection;
-  formOptions.value = [{
-    name: currentDetails.name,
-    id: currentDetails.id,
-    label: formatResourceName(currentDetails.name),
-    details: currentDetails,
-  }];
+  if (!preserveSelection || !formOptions.value.length) {
+    formOptions.value = [{
+      name: currentDetails.name,
+      id: currentDetails.id,
+      label: currentDetails.name,
+      isDefault: false,
+      isForm: true,
+      details: currentDetails,
+    }];
+  }
   loadingForms.value = true;
 
   try {
     const speciesName = currentDetails.species?.name || currentDetails.name;
     const speciesResponse = await PokeAPI.getPokemonSpecies(speciesName);
-    const varieties = speciesResponse.data.varieties || [];
+    const resolvedSpecies = speciesResponse.data;
+    if (!isPokemonForSpecies(currentDetails, resolvedSpecies)) {
+      throw new Error(`Pokémon ${currentDetails.name} does not belong to species ${resolvedSpecies.name}.`);
+    }
+
+    const varieties = resolvedSpecies.varieties || [];
     const detailsByName = new Map([[currentDetails.name, currentDetails]]);
-    let nextIndex = 0;
 
-    const worker = async () => {
-      while (nextIndex < varieties.length) {
-        const variety = varieties[nextIndex];
-        nextIndex += 1;
-        const name = variety.pokemon?.name;
-        if (!name || detailsByName.has(name)) continue;
-        try {
-          const response = await PokeAPI.getPokemonDetails(name);
-          detailsByName.set(name, response.data);
-        } catch (error) {
-          console.error(`Failed to load calculator form ${name}:`, error);
-        }
+    await mapWithConcurrency(varieties, async (variety) => {
+      const name = variety.pokemon?.name;
+      if (!name || detailsByName.has(name)) return;
+      try {
+        const response = await PokeAPI.getPokemonDetails(name);
+        detailsByName.set(name, response.data);
+      } catch (error) {
+        console.error(`Failed to load calculator form ${name}:`, error);
       }
-    };
-
-    await Promise.all(Array.from(
-      { length: Math.min(MAX_PARALLEL_REQUESTS, Math.max(1, varieties.length)) },
-      worker,
-    ));
+    }, MAX_PARALLEL_REQUESTS);
 
     let germanCatalog = null;
     if (language.value === 'de') {
@@ -319,38 +336,21 @@ const loadFormOptions = async ({ preserveSelection = false } = {}) => {
 
     if (requestId !== formRequestId) return;
 
-    const options = varieties
-      .map((variety) => detailsByName.get(variety.pokemon?.name))
-      .filter(Boolean)
-      .map((details) => ({
-        name: details.name,
-        id: details.id,
-        label: language.value === 'de' && germanCatalog
-          ? getCatalogLabel(germanCatalog, details.id, details.name)
-          : formatResourceName(details.name),
-        details,
-      }));
-
-    if (!options.some((option) => option.name === currentDetails.name)) {
-      options.unshift({
-        name: currentDetails.name,
-        id: currentDetails.id,
-        label: language.value === 'de' && germanCatalog
-          ? getCatalogLabel(germanCatalog, currentDetails.id, currentDetails.name)
-          : formatResourceName(currentDetails.name),
-        details: currentDetails,
-      });
-    }
-
-    formOptions.value = options.sort((first, second) => {
-      if (first.name === currentDetails.name) return -1;
-      if (second.name === currentDetails.name) return 1;
-      return first.label.localeCompare(second.label, language.value === 'de' ? 'de-DE' : 'en-US');
+    const options = createPokemonVarietyOptions({
+      species: resolvedSpecies,
+      detailsByName,
+      catalog: germanCatalog,
+      language: language.value,
     });
+    if (!options.length) throw new Error(`No verified varieties were found for ${resolvedSpecies.name}.`);
+
+    formOptions.value = options;
+    const defaultOption = getDefaultPokemonVariety(options);
+    if (defaultOption) setDefaultPokemonForm(defaultOption.details);
 
     selectedFormName.value = formOptions.value.some((option) => option.name === previousSelection)
       ? previousSelection
-      : currentDetails.name;
+      : defaultOption?.name || currentDetails.name;
   } catch (error) {
     console.error('Failed to load calculator forms:', error);
   } finally {
@@ -367,10 +367,24 @@ watch(activePokemonDetails, (details) => {
   setActivePokemonForm(details);
 }, { immediate: true });
 
+watch(activePokemonForm, (details) => {
+  if (
+    !details
+    || details.species?.name !== props.pokemonDetails.species?.name
+    || !formOptions.value.some((option) => option.name === details.name)
+  ) {
+    return;
+  }
+
+  selectedFormName.value = details.name;
+});
+
 watch(
   () => props.pokemonDetails.name,
   () => {
-    resetCalculator();
+    level.value = 50;
+    nature.value = 'hardy';
+    resetTrainingValues();
     void loadFormOptions();
   },
   { immediate: true },
@@ -380,7 +394,9 @@ watch(language, () => {
   void loadFormOptions({ preserveSelection: true });
 });
 
-onBeforeUnmount(clearActivePokemonForm);
+onBeforeUnmount(() => {
+  formRequestId += 1;
+});
 </script>
 
 <style scoped>

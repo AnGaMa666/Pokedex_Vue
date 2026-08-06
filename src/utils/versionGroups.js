@@ -1,6 +1,6 @@
 const VERSION_GROUPS = Object.freeze({
-  'red-green-japan': { id: 28, order: 1, generation: 1, de: 'Rot / Grün (Japan)', en: 'Red / Green (Japan)' },
-  'blue-japan': { id: 29, order: 2, generation: 1, de: 'Blau (Japan)', en: 'Blue (Japan)' },
+  'red-green-japan': { id: 28, order: 1, generation: 1, de: 'Japanische Rote/Grüne Edition', en: 'Japanese Red / Green' },
+  'blue-japan': { id: 29, order: 2, generation: 1, de: 'Japanische Blaue Edition', en: 'Japanese Blue' },
   'red-blue': { id: 1, order: 3, generation: 1, de: 'Rot / Blau', en: 'Red / Blue' },
   yellow: { id: 2, order: 4, generation: 1, de: 'Gelb', en: 'Yellow' },
   'gold-silver': { id: 3, order: 5, generation: 2, de: 'Gold / Silber', en: 'Gold / Silver' },
@@ -45,26 +45,60 @@ const ROMAN_GENERATIONS = Object.freeze({
   9: 'IX',
 });
 
+const GENERATION_NUMBERS = Object.freeze({
+  'generation-i': 1,
+  'generation-ii': 2,
+  'generation-iii': 3,
+  'generation-iv': 4,
+  'generation-v': 5,
+  'generation-vi': 6,
+  'generation-vii': 7,
+  'generation-viii': 8,
+  'generation-ix': 9,
+});
+
 const formatFallback = (name = '') => name
   .split('-')
   .filter(Boolean)
   .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
   .join(' / ');
 
-export const getVersionGroupMetadata = (name = '', fallbackId = 0) => {
-  const known = VERSION_GROUPS[name];
-  if (known) {
-    return { name, ...known };
-  }
+const getGenerationNumber = (generation) => {
+  const value = generation?.name ?? generation;
+  if (Number.isFinite(Number(value)) && Number(value) > 0) return Number(value);
+  if (typeof value === 'string' && GENERATION_NUMBERS[value]) return GENERATION_NUMBERS[value];
 
-  const id = Number(fallbackId) || Number.MAX_SAFE_INTEGER;
+  const urlMatch = generation?.url?.match?.(/\/generation\/(\d+)\/?(?:\?.*)?$/);
+  return urlMatch ? Number(urlMatch[1]) : null;
+};
+
+const getApiMetadata = (fallback) => (
+  fallback && typeof fallback === 'object'
+    ? fallback
+    : { id: fallback }
+);
+
+export const getVersionGroupMetadata = (name = '', fallback = 0) => {
+  const known = VERSION_GROUPS[name];
+  const apiMetadata = getApiMetadata(fallback);
+  const apiId = Number(apiMetadata.id);
+  const apiOrder = Number(apiMetadata.order);
+  const apiGeneration = getGenerationNumber(apiMetadata.generation);
+  const id = Number.isFinite(apiId) && apiId > 0
+    ? apiId
+    : known?.id || Number.MAX_SAFE_INTEGER;
+  const order = Number.isFinite(apiOrder) && apiOrder >= 0
+    ? apiOrder
+    : known?.order ?? id;
+  const generation = apiGeneration || known?.generation || 99;
+
   return {
     name,
     id,
-    order: id,
-    generation: 99,
-    de: formatFallback(name),
-    en: formatFallback(name),
+    order,
+    generation,
+    de: known?.de || formatFallback(name),
+    en: known?.en || formatFallback(name),
   };
 };
 
@@ -80,9 +114,10 @@ export const getGenerationLabel = (generation, language = 'en') => {
 };
 
 export const sortVersionGroups = (groups = []) => [...groups].sort((first, second) => {
-  const firstMetadata = getVersionGroupMetadata(first.name, first.id);
-  const secondMetadata = getVersionGroupMetadata(second.name, second.id);
-  return firstMetadata.order - secondMetadata.order
+  const firstMetadata = getVersionGroupMetadata(first.name, first);
+  const secondMetadata = getVersionGroupMetadata(second.name, second);
+  return firstMetadata.generation - secondMetadata.generation
+    || firstMetadata.order - secondMetadata.order
     || firstMetadata.id - secondMetadata.id
     || first.name.localeCompare(second.name);
 });
@@ -91,7 +126,7 @@ export const groupVersionGroupsByGeneration = (groups = [], language = 'en') => 
   const sections = new Map();
 
   for (const group of sortVersionGroups(groups)) {
-    const metadata = getVersionGroupMetadata(group.name, group.id);
+    const metadata = getVersionGroupMetadata(group.name, group);
     if (!sections.has(metadata.generation)) {
       sections.set(metadata.generation, {
         generation: metadata.generation,

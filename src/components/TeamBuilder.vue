@@ -221,8 +221,16 @@
       :more-label="labels.showMore"
       :result-label="labels.resultCount"
       :loading="pickerLoading"
+      :categories="pickerCategories"
+      :selected-category="pickerCategory"
+      :category-label="labels.itemCategory"
+      :all-categories-label="labels.allHeldItems"
+      :filters="pickerFilters"
       @close="closePicker"
       @select="applyPickerSelection"
+      @update:selected-category="pickerCategory = $event"
+      @visible-options="hydrateVisiblePickerOptions"
+      @filters-changed="handlePickerFiltersChanged"
     />
   </section>
 </template>
@@ -249,10 +257,28 @@ import {
   getTotalEvs,
   normalizeBaseStats,
 } from '@/utils/statCalculator';
-import { getLocalizedTypeName } from '@/utils/localization';
+import {
+  getLocalizedDamageClassName,
+  getLocalizedTypeName,
+} from '@/utils/localization';
 import { formatResourceId, getResourceId } from '@/utils/resource';
 import { getPokemonSprite } from '@/utils/sprites';
+import {
+  HELD_ITEM_ATTRIBUTE_NAMES,
+  TEAM_ITEM_CATEGORIES,
+  buildHeldItemCatalog,
+  createTeamExport,
+  getMoveLearnMethodLabel,
+  getPokemonMoveAvailability,
+  mapWithConcurrency,
+} from '@/utils/teamBuilder';
 import { getTypeColor } from '@/utils/typeColors';
+import { getTypeIconDataUri } from '@/utils/typeIcons';
+import {
+  getVersionGroupLabel,
+  getVersionGroupMetadata,
+  sortVersionGroups,
+} from '@/utils/versionGroups';
 import TeamBuilderPicker from './TeamBuilderPicker.vue';
 
 const props = defineProps({
@@ -272,14 +298,32 @@ const TEAM_SIZE = 6;
 const statNames = BATTLE_STATS;
 const pokemonOptions = ref([]);
 const itemOptions = ref([]);
+const heldItemsLoaded = ref(false);
 const pokemonCatalog = ref(new Map());
 const itemCatalog = ref(new Map());
 const moveCatalog = ref(new Map());
 const abilityCatalog = ref(new Map());
+const moveDetailsByName = reactive(new Map());
+const moveDetailFailures = reactive(new Set());
 const copyState = ref('');
 const restoring = ref(false);
 const exportMode = ref('summary');
-const pickerLoading = ref(false);
+const pickerPendingOperations = reactive(new Set());
+const pickerLoading = computed(() => pickerPendingOperations.size > 0);
+const pickerCategory = ref('');
+let heldItemLoadPromise = null;
+let moveHydrationSequence = 0;
+let pickerOperationSequence = 0;
+
+const runPickerOperation = async (operation) => {
+  const operationId = ++pickerOperationSequence;
+  pickerPendingOperations.add(operationId);
+  try {
+    return await operation();
+  } finally {
+    pickerPendingOperations.delete(operationId);
+  }
+};
 const picker = reactive({
   open: false,
   kind: '',
@@ -369,6 +413,21 @@ const labels = computed(() => language.value === 'de'
       abilityPicker: 'Verfügbare Fähigkeiten',
       itemPicker: 'Trageitems',
       movePicker: 'Erlernbare Attacken',
+      itemCategory: 'Trageitem-Kategorie',
+      allHeldItems: 'Alle geeigneten Trageitems',
+      moveTypeFilter: 'Typ',
+      allMoveTypes: 'Alle Typen',
+      moveDamageClassFilter: 'Schadensart',
+      allDamageClasses: 'Alle Schadensarten',
+      moveLearnMethodFilter: 'Lernmethode',
+      allLearnMethods: 'Alle Lernmethoden',
+      moveVersionGroupFilter: 'Versionsgruppe',
+      allVersionGroups: 'Alle Versionsgruppen',
+      power: 'Stärke',
+      accuracy: 'Genauigkeit',
+      pp: 'AP',
+      noValue: '—',
+      moveMetadataLoading: 'Attackendaten werden geladen…',
       pokemonPickerHint: 'Nach deutschem oder englischem Namen sowie Pokédex- beziehungsweise API-Nummer suchen',
       abilityPickerHint: 'Fähigkeit suchen',
       itemPickerHint: 'Item suchen',
@@ -441,6 +500,21 @@ const labels = computed(() => language.value === 'de'
       abilityPicker: 'Available abilities',
       itemPicker: 'Held items',
       movePicker: 'Learnable moves',
+      itemCategory: 'Held item category',
+      allHeldItems: 'All suitable held items',
+      moveTypeFilter: 'Type',
+      allMoveTypes: 'All types',
+      moveDamageClassFilter: 'Damage class',
+      allDamageClasses: 'All damage classes',
+      moveLearnMethodFilter: 'Learn method',
+      allLearnMethods: 'All learn methods',
+      moveVersionGroupFilter: 'Version group',
+      allVersionGroups: 'All version groups',
+      power: 'Power',
+      accuracy: 'Accuracy',
+      pp: 'PP',
+      noValue: '—',
+      moveMetadataLoading: 'Loading move data…',
       pokemonPickerHint: 'Search by name or Pokédex/API number',
       abilityPickerHint: 'Search ability',
       itemPickerHint: 'Search item',
@@ -504,10 +578,6 @@ const formatName = (name = '') => name
 const getStatLabel = (statName) => language.value === 'de'
   ? statLabelsDe[statName]
   : statLabelsEn[statName];
-const getStatAbbreviation = (statName) => ({
-  hp: 'HP', attack: 'Atk', defense: 'Def',
-  'special-attack': 'SpA', 'special-defense': 'SpD', speed: 'Spe',
-})[statName];
 const formatNatureEffect = (nature) => {
   if (!nature.increased || !nature.decreased) return labels.value.neutral;
   return `+${getStatLabel(nature.increased)} / −${getStatLabel(nature.decreased)}`;
@@ -554,54 +624,29 @@ const getItemLabel = (itemName) => {
     : formatName(itemName);
 };
 
-const readableExport = computed(() => teamSlots
-  .filter((slot) => slot.details)
-  .map((slot) => {
-    const lines = [slot.item
-      ? `${getSlotPokemonName(slot)} @ ${getItemLabel(slot.item)}`
-      : getSlotPokemonName(slot)];
-    if (slot.ability) lines.push(`${labels.value.abilityExport}: ${getAbilityLabel(slot, slot.ability)}`);
-    lines.push(`${labels.value.levelExport}: ${slot.level}`);
-    const nature = natureOptions.value.find((entry) => entry.name === slot.nature);
-    lines.push(`${labels.value.natureExport}: ${nature?.label || formatName(slot.nature)}`);
-    const evLine = BATTLE_STATS
-      .filter((statName) => Number(slot.evs[statName]) > 0)
-      .map((statName) => `${slot.evs[statName]} ${getStatLabel(statName)}`)
-      .join(' / ');
-    const ivLine = BATTLE_STATS
-      .filter((statName) => Number(slot.ivs[statName]) < 31)
-      .map((statName) => `${slot.ivs[statName]} ${getStatLabel(statName)}`)
-      .join(' / ');
-    if (evLine) lines.push(`${labels.value.evExport}: ${evLine}`);
-    if (ivLine) lines.push(`${labels.value.ivExport}: ${ivLine}`);
-    slot.moves.filter(Boolean).forEach((move) => lines.push(`- ${getMoveLabel(slot, move)}`));
-    return lines.join('\n');
-  })
-  .join('\n\n'));
+const readableExport = computed(() => createTeamExport(teamSlots, {
+  mode: 'summary',
+  statNames: BATTLE_STATS,
+  labels: {
+    ability: labels.value.abilityExport,
+    level: labels.value.levelExport,
+    nature: labels.value.natureExport,
+    evs: labels.value.evExport,
+    ivs: labels.value.ivExport,
+  },
+  resolvePokemonName: getSlotPokemonName,
+  resolveAbilityName: getAbilityLabel,
+  resolveItemName: getItemLabel,
+  resolveMoveName: getMoveLabel,
+  resolveNatureName: (natureName) => natureOptions.value
+    .find((entry) => entry.name === natureName)?.label || formatName(natureName),
+  resolveStatName: getStatLabel,
+}));
 
-const showdownExport = computed(() => teamSlots
-  .filter((slot) => slot.details)
-  .map((slot) => {
-    const lines = [slot.item
-      ? `${formatName(slot.speciesName)} @ ${formatName(slot.item)}`
-      : formatName(slot.speciesName)];
-    if (slot.ability) lines.push(`Ability: ${formatName(slot.ability)}`);
-    lines.push(`Level: ${slot.level}`);
-    lines.push(`${formatName(slot.nature)} Nature`);
-    const evLine = BATTLE_STATS
-      .filter((statName) => Number(slot.evs[statName]) > 0)
-      .map((statName) => `${slot.evs[statName]} ${getStatAbbreviation(statName)}`)
-      .join(' / ');
-    const ivLine = BATTLE_STATS
-      .filter((statName) => Number(slot.ivs[statName]) < 31)
-      .map((statName) => `${slot.ivs[statName]} ${getStatAbbreviation(statName)}`)
-      .join(' / ');
-    if (evLine) lines.push(`EVs: ${evLine}`);
-    if (ivLine) lines.push(`IVs: ${ivLine}`);
-    slot.moves.filter(Boolean).forEach((move) => lines.push(`- ${formatName(move)}`));
-    return lines.join('\n');
-  })
-  .join('\n\n'));
+const showdownExport = computed(() => createTeamExport(teamSlots, {
+  mode: 'showdown',
+  statNames: BATTLE_STATS,
+}));
 const teamExport = computed(() => exportMode.value === 'showdown'
   ? showdownExport.value
   : readableExport.value);
@@ -657,6 +702,10 @@ const abilityPickerOptions = computed(() => (pickerSlot.value?.details?.abilitie
     symbol: entry.is_hidden ? '✦' : '◆',
   };
 }));
+const getTeamItemCategoryLabel = (categoryValue) => {
+  const category = TEAM_ITEM_CATEGORIES.find((entry) => entry.value === categoryValue);
+  return category?.[language.value] || formatName(categoryValue);
+};
 const itemPickerOptions = computed(() => [{
   value: '',
   label: labels.value.noItem,
@@ -670,6 +719,12 @@ const itemPickerOptions = computed(() => [{
   aliases: [item.name],
   number: formatResourceId(item.id),
   image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${item.name}.png`,
+  description: getTeamItemCategoryLabel(item.category),
+  category: item.category,
+  categoryLabel: getTeamItemCategoryLabel(item.category),
+  chips: [
+    language.value === 'de' ? item.apiCategory.de : item.apiCategory.en,
+  ].filter(Boolean),
 }))]);
 const movePickerOptions = computed(() => {
   const moves = [...new Map(
@@ -684,6 +739,22 @@ const movePickerOptions = computed(() => {
     symbol: '×',
   }, ...moves.map((entry) => {
     const id = getResourceId(entry.move.url);
+    const details = moveDetailsByName.get(entry.move.name);
+    const availability = getPokemonMoveAvailability(entry);
+    const typeName = details?.type?.name || '';
+    const damageClass = details?.damage_class?.name || '';
+    const metric = (value) => value === null || value === undefined
+      ? labels.value.noValue
+      : String(value);
+    const description = details
+      ? [
+          getLocalizedTypeName(typeName, language.value),
+          getLocalizedDamageClassName(damageClass, language.value),
+          `${labels.value.power}: ${metric(details.power)}`,
+          `${labels.value.accuracy}: ${metric(details.accuracy)}`,
+          `${labels.value.pp}: ${metric(details.pp)}`,
+        ].join(' · ')
+      : labels.value.moveMetadataLoading;
     return {
       value: entry.move.name,
       label: language.value === 'de'
@@ -691,9 +762,88 @@ const movePickerOptions = computed(() => {
         : formatName(entry.move.name),
       aliases: [entry.move.name],
       number: id ? String(id) : '',
+      image: typeName ? getTypeIconDataUri(typeName) : '',
       symbol: '⚡',
+      description,
+      chips: availability.methods.map((method) => getMoveLearnMethodLabel(method, language.value)),
+      filterValues: {
+        type: typeName,
+        damageClass,
+        learnMethod: availability.methods,
+        versionGroup: availability.versionGroups,
+      },
     };
   })];
+});
+const pickerCategories = computed(() => {
+  if (picker.kind !== 'item') return [];
+  const counts = new Map();
+  for (const item of itemOptions.value) counts.set(item.category, (counts.get(item.category) || 0) + 1);
+  return TEAM_ITEM_CATEGORIES
+    .filter((category) => counts.has(category.value))
+    .map((category) => ({
+      value: category.value,
+      label: category[language.value] || category.en,
+      count: counts.get(category.value),
+    }));
+});
+
+const MOVE_TYPES = Object.freeze([
+  'normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison',
+  'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+]);
+
+const pickerFilters = computed(() => {
+  if (picker.kind !== 'move') return [];
+  const moveEntries = pickerSlot.value?.details?.moves || [];
+  const methods = new Set();
+  const versionGroups = new Map();
+  for (const entry of moveEntries) {
+    const availability = getPokemonMoveAvailability(entry);
+    availability.methods.forEach((method) => methods.add(method));
+    availability.versionGroups.forEach((name) => {
+      const metadata = getVersionGroupMetadata(name);
+      versionGroups.set(name, { name, id: metadata.id });
+    });
+  }
+
+  return [
+    {
+      key: 'type',
+      label: labels.value.moveTypeFilter,
+      allLabel: labels.value.allMoveTypes,
+      options: MOVE_TYPES.map((typeName) => ({
+        value: typeName,
+        label: getLocalizedTypeName(typeName, language.value),
+      })),
+    },
+    {
+      key: 'damageClass',
+      label: labels.value.moveDamageClassFilter,
+      allLabel: labels.value.allDamageClasses,
+      options: ['physical', 'special', 'status'].map((damageClass) => ({
+        value: damageClass,
+        label: getLocalizedDamageClassName(damageClass, language.value),
+      })),
+    },
+    {
+      key: 'learnMethod',
+      label: labels.value.moveLearnMethodFilter,
+      allLabel: labels.value.allLearnMethods,
+      options: [...methods]
+        .map((method) => ({ value: method, label: getMoveLearnMethodLabel(method, language.value) }))
+        .sort((first, second) => first.label.localeCompare(second.label, language.value)),
+    },
+    {
+      key: 'versionGroup',
+      label: labels.value.moveVersionGroupFilter,
+      allLabel: labels.value.allVersionGroups,
+      options: sortVersionGroups([...versionGroups.values()]).map((group) => ({
+        value: group.name,
+        label: getVersionGroupLabel(group.name, language.value),
+      })),
+    },
+  ];
 });
 const pickerOptions = computed(() => ({
   pokemon: pokemonPickerOptions.value,
@@ -728,6 +878,83 @@ const loadSlotLocalizationCatalogs = async () => {
   ]);
   if (results[0].status === 'fulfilled') abilityCatalog.value = results[0].value;
   if (results[1].status === 'fulfilled') moveCatalog.value = results[1].value;
+};
+
+const ensureHeldItemOptions = async () => {
+  if (heldItemsLoaded.value) return;
+  if (heldItemLoadPromise) return heldItemLoadPromise;
+
+  heldItemLoadPromise = (async () => {
+    const [attributeResults, categoryListResponse] = await Promise.all([
+      Promise.allSettled(
+        HELD_ITEM_ATTRIBUTE_NAMES.map((attributeName) => PokeAPI.getItemAttribute(attributeName)),
+      ),
+      PokeAPI.getItemCategories(),
+    ]);
+    const attributePayloads = attributeResults
+      .filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value.data);
+    if (!attributePayloads.some((payload) => payload.name === 'holdable')) {
+      throw new Error('The holdable item attribute could not be loaded.');
+    }
+
+    const categoryPayloads = (await mapWithConcurrency(
+      categoryListResponse.data.results || [],
+      6,
+      async (category) => {
+        try {
+          const response = await PokeAPI.getItemCategory(category.name);
+          return response.data;
+        } catch (categoryError) {
+          console.error(`Failed to load item category ${category.name}:`, categoryError);
+          return null;
+        }
+      },
+    )).filter(Boolean);
+
+    itemOptions.value = buildHeldItemCatalog({ attributePayloads, categoryPayloads });
+    heldItemsLoaded.value = true;
+  })();
+
+  try {
+    await heldItemLoadPromise;
+  } finally {
+    heldItemLoadPromise = null;
+  }
+};
+
+const hydrateVisiblePickerOptions = async (options = []) => {
+  if (!picker.open || picker.kind !== 'move') return;
+  const hydrationId = ++moveHydrationSequence;
+  const moveNames = [...new Set(
+    options
+      .map((option) => option.value)
+      .filter((moveName) => moveName
+        && !moveDetailsByName.has(moveName)
+        && !moveDetailFailures.has(moveName)),
+  )];
+  if (!moveNames.length) return;
+
+  await runPickerOperation(async () => {
+    await mapWithConcurrency(moveNames, 6, async (moveName) => {
+      try {
+        const response = await PokeAPI.getMoveDetails(moveName);
+        moveDetailsByName.set(moveName, response.data);
+      } catch (moveError) {
+        console.error(`Failed to load move ${moveName}:`, moveError);
+        moveDetailFailures.add(moveName);
+      }
+    });
+  });
+
+  if (hydrationId !== moveHydrationSequence) return;
+};
+
+const handlePickerFiltersChanged = (filterValues = {}) => {
+  if (picker.kind !== 'move') return;
+  if (filterValues.type || filterValues.damageClass) {
+    void hydrateVisiblePickerOptions(movePickerOptions.value);
+  }
 };
 
 const loadSlot = async (slotIndex, preserveConfiguration = false) => {
@@ -780,31 +1007,46 @@ const loadSlot = async (slotIndex, preserveConfiguration = false) => {
 };
 
 const openPicker = async (kind, slotIndex, moveIndex = 0) => {
+  pickerPendingOperations.clear();
+  pickerCategory.value = '';
+  if (kind === 'move') moveDetailFailures.clear();
   picker.kind = kind;
   picker.slotIndex = slotIndex;
   picker.moveIndex = moveIndex;
   picker.open = true;
-  pickerLoading.value = true;
-  try {
-    if (language.value === 'de') {
-      if (kind === 'pokemon' && !pokemonCatalog.value.size) {
-        pokemonCatalog.value = await loadGermanPokemonCatalog();
-      } else if (kind === 'item' && !itemCatalog.value.size) {
-        itemCatalog.value = await loadGermanCatalog('items');
-      } else if (kind === 'move' && !moveCatalog.value.size) {
-        moveCatalog.value = await loadGermanCatalog('moves');
-      } else if (kind === 'ability' && !abilityCatalog.value.size) {
-        abilityCatalog.value = await loadGermanCatalog('abilities');
+  await runPickerOperation(async () => {
+    try {
+      const pendingLoads = [];
+      if (kind === 'item') pendingLoads.push(ensureHeldItemOptions());
+      if (language.value === 'de') {
+        if (kind === 'pokemon' && !pokemonCatalog.value.size) {
+          pendingLoads.push(loadGermanPokemonCatalog().then((catalog) => {
+            pokemonCatalog.value = catalog;
+          }));
+        } else if (kind === 'item' && !itemCatalog.value.size) {
+          pendingLoads.push(loadGermanCatalog('items').then((catalog) => {
+            itemCatalog.value = catalog;
+          }));
+        } else if (kind === 'move' && !moveCatalog.value.size) {
+          pendingLoads.push(loadGermanCatalog('moves').then((catalog) => {
+            moveCatalog.value = catalog;
+          }));
+        } else if (kind === 'ability' && !abilityCatalog.value.size) {
+          pendingLoads.push(loadGermanCatalog('abilities').then((catalog) => {
+            abilityCatalog.value = catalog;
+          }));
+        }
       }
+      await Promise.all(pendingLoads);
+    } catch (catalogError) {
+      console.error(`Failed to load ${kind} picker data:`, catalogError);
     }
-  } catch (catalogError) {
-    console.error(`Failed to load ${kind} localization catalog:`, catalogError);
-  } finally {
-    pickerLoading.value = false;
-  }
+  });
 };
 
 const closePicker = () => {
+  moveHydrationSequence += 1;
+  pickerPendingOperations.clear();
   picker.open = false;
 };
 
@@ -889,23 +1131,18 @@ const restoreTeam = async () => {
 
 const loadOptions = async () => {
   try {
-    const [pokemonResponse, itemsResponse] = await Promise.all([
-      PokeAPI.getPokemons(),
-      PokeAPI.getItems(),
-    ]);
+    const pokemonResponse = await PokeAPI.getPokemons();
     pokemonOptions.value = pokemonResponse.data.results
       .map((pokemon) => ({ ...pokemon, id: getResourceId(pokemon.url) }))
       .filter((pokemon) => pokemon.id !== null)
       .sort((first, second) => first.id - second.id);
-    itemOptions.value = itemsResponse.data.results
-      .map((item) => ({ ...item, id: getResourceId(item.url) }))
-      .filter((item) => item.id !== null);
     if (language.value === 'de') {
-      try {
-        pokemonCatalog.value = await loadGermanPokemonCatalog();
-      } catch (catalogError) {
-        console.error('Failed to preload German Pokémon names:', catalogError);
-      }
+      const catalogResults = await Promise.allSettled([
+        loadGermanPokemonCatalog(),
+        loadGermanCatalog('items'),
+      ]);
+      if (catalogResults[0].status === 'fulfilled') pokemonCatalog.value = catalogResults[0].value;
+      if (catalogResults[1].status === 'fulfilled') itemCatalog.value = catalogResults[1].value;
     }
     await restoreTeam();
   } catch (requestError) {
@@ -933,7 +1170,12 @@ watch(labels, () => {
 watch(language, async (newLanguage) => {
   if (newLanguage !== 'de') return;
   try {
-    pokemonCatalog.value = await loadGermanPokemonCatalog();
+    const [pokemonNames, itemNames] = await Promise.all([
+      loadGermanPokemonCatalog(),
+      loadGermanCatalog('items'),
+    ]);
+    pokemonCatalog.value = pokemonNames;
+    itemCatalog.value = itemNames;
     void loadSlotLocalizationCatalogs();
   } catch (catalogError) {
     console.error('Failed to switch team builder localization:', catalogError);

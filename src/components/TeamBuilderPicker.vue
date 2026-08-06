@@ -40,6 +40,18 @@
               </option>
             </select>
           </label>
+
+          <div v-if="filters.length" class="picker-filters">
+            <label v-for="filter in filters" :key="filter.key">
+              <span>{{ filter.label }}</span>
+              <select v-model="filterValues[filter.key]">
+                <option value="">{{ filter.allLabel }}</option>
+                <option v-for="option in filter.options" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+          </div>
         </div>
 
         <div v-if="loading" class="picker-status" role="status">{{ loadingLabel }}</div>
@@ -68,8 +80,8 @@
 
               <span class="picker-copy">
                 <span v-if="option.number" class="picker-number">#{{ option.number }}</span>
-                <strong>{{ option.label }}</strong>
-                <small v-if="option.description">{{ option.description }}</small>
+                <strong :title="option.label">{{ option.label }}</strong>
+                <small v-if="option.description" :title="option.description">{{ option.description }}</small>
                 <span v-if="option.chips?.length" class="picker-chips">
                   <span v-for="chip in option.chips" :key="chip">{{ chip }}</span>
                 </span>
@@ -94,9 +106,11 @@ import {
   computed,
   nextTick,
   onBeforeUnmount,
+  reactive,
   ref,
   watch,
 } from 'vue';
+import { filterTeamBuilderOptions } from '@/utils/teamBuilder';
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -117,53 +131,48 @@ const props = defineProps({
   categoryLabel: { type: String, default: 'Category' },
   allCategoriesLabel: { type: String, default: 'All categories' },
   allowAllCategories: { type: Boolean, default: true },
+  filters: { type: Array, default: () => [] },
 });
 
-const emit = defineEmits(['close', 'select', 'update:selectedCategory']);
+const emit = defineEmits([
+  'close',
+  'select',
+  'update:selectedCategory',
+  'visible-options',
+  'filters-changed',
+]);
 const PAGE_SIZE = 80;
 const query = ref('');
 const visibleLimit = ref(PAGE_SIZE);
+const filterValues = reactive({});
 const searchInput = ref(null);
 const dialog = ref(null);
 const titleId = `team-picker-${Math.random().toString(36).slice(2)}`;
 
-const normalize = (value = '') => value
-  .toLocaleLowerCase('de-DE')
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[^a-z0-9]+/g, ' ')
-  .trim();
-
-const filteredOptions = computed(() => {
-  const normalizedQuery = normalize(query.value);
-  const terms = normalizedQuery.split(/\s+/).filter(Boolean);
-  return props.options.filter((option) => {
-    const matchesCategory = !props.categories.length
-      || !props.selectedCategory
-      || option.category === props.selectedCategory
-      || option.value === '';
-    if (!matchesCategory) return false;
-    if (!terms.length) return true;
-    const searchable = normalize([
-      option.label,
-      option.value,
-      option.number,
-      option.description,
-      option.categoryLabel,
-      ...(option.aliases || []),
-      ...(option.chips || []),
-    ].filter(Boolean).join(' '));
-    return terms.every((term) => searchable.includes(term));
-  });
-});
+const filteredOptions = computed(() => filterTeamBuilderOptions(props.options, {
+  query: query.value,
+  categoriesEnabled: props.categories.length > 0,
+  selectedCategory: props.selectedCategory,
+  filters: props.filters,
+  filterValues,
+}));
 
 const visibleOptions = computed(() => filteredOptions.value.slice(0, visibleLimit.value));
 const resultText = computed(() => props.resultLabel.replace('{count}', filteredOptions.value.length));
 const closePicker = () => emit('close');
 const selectOption = (option) => emit('select', option);
 const updateCategory = (value) => emit('update:selectedCategory', value);
-const lockBody = () => document.documentElement.classList.add('team-picker-open');
-const unlockBody = () => document.documentElement.classList.remove('team-picker-open');
+const lockBody = () => {
+  if (typeof document !== 'undefined') document.documentElement.classList.add('team-picker-open');
+};
+const unlockBody = () => {
+  if (typeof document !== 'undefined') document.documentElement.classList.remove('team-picker-open');
+};
+
+const resetFilters = () => {
+  for (const key of Object.keys(filterValues)) delete filterValues[key];
+  for (const filter of props.filters) filterValues[filter.key] = filter.defaultValue || '';
+};
 
 watch(
   () => props.open,
@@ -171,6 +180,7 @@ watch(
     if (!isOpen) { unlockBody(); return; }
     query.value = '';
     visibleLimit.value = PAGE_SIZE;
+    resetFilters();
     lockBody();
     await nextTick();
     searchInput.value?.focus();
@@ -178,6 +188,17 @@ watch(
   { immediate: true },
 );
 watch([query, () => props.selectedCategory], () => { visibleLimit.value = PAGE_SIZE; });
+watch(filterValues, () => {
+  visibleLimit.value = PAGE_SIZE;
+  emit('filters-changed', { ...filterValues });
+}, { deep: true });
+watch(
+  () => [props.open, visibleOptions.value.map((option) => option.value).join('\u0000')],
+  ([isOpen]) => {
+    if (isOpen) emit('visible-options', visibleOptions.value);
+  },
+  { flush: 'post' },
+);
 onBeforeUnmount(unlockBody);
 </script>
 
@@ -199,6 +220,9 @@ html.team-picker-open { overflow: hidden; }
 .picker-search input { width: 100%; min-height: 46px; border: 0; outline: 0; color: var(--legacy-text); background: transparent; font: inherit; }
 .picker-category { display: grid; gap: 3px; color: var(--legacy-muted); font-size: 0.64rem; font-weight: 850; }
 .picker-category select { min-height: 46px; padding: 7px 9px; border: 1px solid var(--legacy-border-strong); color: var(--legacy-text); background: var(--legacy-page); }
+.picker-filters { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.picker-filters label { display: grid; gap: 3px; min-width: 0; color: var(--legacy-muted); font-size: 0.64rem; font-weight: 850; }
+.picker-filters select { width: 100%; min-height: 42px; padding: 7px 9px; border: 1px solid var(--legacy-border-strong); color: var(--legacy-text); background: var(--legacy-page); }
 .picker-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 7px; min-height: 0; padding: 0 12px 12px; margin: 0; overflow-y: auto; list-style: none; }
 .picker-list li { height: 100%; }
 .picker-option { display: grid; grid-template-columns: 68px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; height: 100%; min-height: 112px; padding: 8px; border: 1px solid var(--legacy-border); border-radius: 4px; color: var(--legacy-text); text-align: left; cursor: pointer; background: var(--legacy-page); }
@@ -217,5 +241,5 @@ html.team-picker-open { overflow: hidden; }
 .picker-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-top: 1px solid var(--legacy-border); color: var(--legacy-muted); background: var(--legacy-page); font-size: 0.72rem; }
 .picker-footer button { min-height: 34px; padding: 6px 12px; border: 1px solid var(--legacy-border-strong); border-radius: 4px; color: var(--legacy-text); cursor: pointer; background: var(--legacy-surface); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-@media (max-width: 720px) { .picker-backdrop { padding: 0; } .picker-dialog { width: 100%; height: 100dvh; max-height: none; border-radius: 0; } .picker-tools, .picker-list { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .picker-backdrop { padding: 0; } .picker-dialog { width: 100%; height: 100dvh; max-height: none; border-radius: 0; } .picker-tools, .picker-list, .picker-filters { grid-template-columns: 1fr; } }
 </style>
