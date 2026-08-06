@@ -8,22 +8,16 @@
         <small>{{ brandContent.disclaimer }}</small>
       </div>
 
-      <div class="creator-links" aria-label="AnGaMa Profile">
+      <div class="creator-links" :aria-label="brandContent.profileLabel">
         <a
-          href="https://www.twitch.tv/angama666"
+          v-for="profile in socialProfiles"
+          :key="profile.id"
+          :href="profile.url"
           target="_blank"
           rel="me external noopener noreferrer"
         >
-          <span aria-hidden="true">▶</span>
-          {{ brandContent.twitch }}
-        </a>
-        <a
-          href="https://github.com/AnGaMa666/Pokedex_Vue"
-          target="_blank"
-          rel="external noopener noreferrer"
-        >
-          <span aria-hidden="true">&lt;/&gt;</span>
-          {{ brandContent.github }}
+          <span aria-hidden="true">{{ profile.symbol }}</span>
+          {{ language === 'de' ? profile.labelDe : profile.labelEn }}
         </a>
       </div>
     </header>
@@ -59,19 +53,55 @@ const brandContent = computed(() => language.value === 'de'
   ? {
       kicker: 'Ein Projekt von AnGaMa',
       title: 'AnGaMa Pokédex',
-      description: 'Der kostenlose Pokémon Explorer von AnGaMa und dem Twitch-Kanal AnGaMa666 verbindet den nationalen Pokédex mit Entwicklungen, Attacken, Items, Routen, Fangchancen und einem kompetitiven Team Builder.',
-      twitch: 'AnGaMa666 auf Twitch',
-      github: 'Quellcode auf GitHub',
+      description: 'Der kostenlose Pokémon Explorer von AnGaMa verbindet den nationalen Pokédex mit Entwicklungen, Attacken, Items, Routen, Fangchancen und einem kompetitiven Team Builder. Offizielle Profile: AnGaMa666 auf Twitch, Instagram, X und GitHub sowie AnGaMaVT auf TikTok.',
+      profileLabel: 'Offizielle Social-Media-Profile von AnGaMa',
       disclaimer: 'Unabhängiges Fanprojekt. Nicht mit Nintendo, GAME FREAK oder The Pokémon Company verbunden.',
     }
   : {
       kicker: 'A project by AnGaMa',
       title: 'AnGaMa Pokédex',
-      description: 'The free Pokémon Explorer by AnGaMa and the Twitch channel AnGaMa666 combines the National Pokédex with evolutions, moves, items, routes, catch chances and a competitive team builder.',
-      twitch: 'AnGaMa666 on Twitch',
-      github: 'Source code on GitHub',
+      description: 'The free Pokémon Explorer by AnGaMa combines the National Pokédex with evolutions, moves, items, routes, catch chances and a competitive team builder. Official profiles: AnGaMa666 on Twitch, Instagram, X and GitHub, plus AnGaMaVT on TikTok.',
+      profileLabel: 'Official AnGaMa social media profiles',
       disclaimer: 'Independent fan project. Not affiliated with Nintendo, GAME FREAK or The Pokémon Company.',
     });
+
+const socialProfiles = [
+  {
+    id: 'twitch',
+    url: 'https://www.twitch.tv/angama666',
+    symbol: '▶',
+    labelDe: 'Twitch: AnGaMa666',
+    labelEn: 'Twitch: AnGaMa666',
+  },
+  {
+    id: 'tiktok',
+    url: 'https://www.tiktok.com/@angamavt',
+    symbol: '♪',
+    labelDe: 'TikTok: AnGaMaVT',
+    labelEn: 'TikTok: AnGaMaVT',
+  },
+  {
+    id: 'instagram',
+    url: 'https://www.instagram.com/angama666/',
+    symbol: '◎',
+    labelDe: 'Instagram: AnGaMa666',
+    labelEn: 'Instagram: AnGaMa666',
+  },
+  {
+    id: 'x',
+    url: 'https://x.com/AnGaMa666',
+    symbol: 'X',
+    labelDe: 'X: AnGaMa666',
+    labelEn: 'X: AnGaMa666',
+  },
+  {
+    id: 'github',
+    url: 'https://github.com/AnGaMa666',
+    symbol: '</>',
+    labelDe: 'GitHub: AnGaMa666',
+    labelEn: 'GitHub: AnGaMa666',
+  },
+];
 
 const sections = computed(() => [
   {
@@ -149,7 +179,7 @@ const sections = computed(() => [
 
 .creator-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 350px);
   gap: 24px;
   align-items: center;
   padding: clamp(22px, 4vw, 42px);
@@ -201,8 +231,9 @@ const sections = computed(() => [
 
 .creator-links {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  min-width: min(100%, 250px);
+  min-width: 0;
 }
 
 .creator-links a {
@@ -221,6 +252,10 @@ const sections = computed(() => [
   background: color-mix(in srgb, var(--legacy-page) 88%, transparent);
 }
 
+.creator-links a:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .creator-links a:hover {
   border-color: var(--legacy-border-strong);
   background: var(--legacy-surface-hover);
@@ -236,9 +271,10 @@ const sections = computed(() => [
   width: 34px;
   height: 34px;
   place-items: center;
+  overflow: hidden;
   border: 1px solid var(--legacy-border);
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   background: var(--legacy-surface);
 }
 
@@ -354,17 +390,33 @@ const sections = computed(() => [
   }
 }
 
-@media (max-width: 1050px) {
+@media (max-width: 1120px) {
   .creator-hero {
     grid-template-columns: 1fr;
   }
 
   .creator-links {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .creator-links a:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 1050px) {
+  .section-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .creator-links {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .section-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .creator-links a:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -372,6 +424,10 @@ const sections = computed(() => [
   .creator-links,
   .section-grid {
     grid-template-columns: 1fr;
+  }
+
+  .creator-links a:last-child:nth-child(odd) {
+    grid-column: auto;
   }
 
   .section-card {
