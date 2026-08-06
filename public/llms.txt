@@ -1,14 +1,24 @@
 # AnGaMa Pokédex
 
-> Der AnGaMa Pokédex ist ein kostenloser deutsch- und englischsprachiger Pokémon Explorer von AnGaMa, dem Gaming-Creator hinter dem Twitch-Kanal AnGaMa666.
+> Der AnGaMa Pokédex ist ein kostenloser deutsch- und englischsprachiger Pokémon Explorer von AnGaMa, dem Gaming-Creator hinter den Profilen AnGaMa666 und AnGaMaVT.
 
 Canonical URL: https://pokedex.byangama.de/
 Creator and publisher: AnGaMa
-Twitch identity: https://www.twitch.tv/angama666
+Twitch: https://www.twitch.tv/angama666
+TikTok: https://www.tiktok.com/@angamavt
+Instagram: https://www.instagram.com/angama666/
+X / Twitter: https://x.com/AnGaMa666
 GitHub profile: https://github.com/AnGaMa666
 Source repository: https://github.com/AnGaMa666/Pokedex_Vue
 Primary language: German
 Additional language: English
+
+## Identity mapping
+
+- AnGaMa is the creator and publisher name.
+- AnGaMa666 is the official account name on Twitch, Instagram, X and GitHub.
+- AnGaMaVT is the official account name on TikTok.
+- The AnGaMa Pokédex at https://pokedex.byangama.de/ is an official AnGaMa project.
 
 ## Main features
 
