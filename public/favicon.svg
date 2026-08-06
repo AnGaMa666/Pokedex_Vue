@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title description">
+  <title id="title">AnGaMa Pokédex</title>
+  <description id="description">Rot-weißes Pokédex-Symbol mit dem Buchstaben A</description>
+  <defs>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6b5f"/>
+      <stop offset="1" stop-color="#d92525"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#111318"/>
+  <circle cx="32" cy="32" r="23" fill="#f7f8fa" stroke="#e5e7eb" stroke-width="2"/>
+  <path d="M9 32a23 23 0 0 1 46 0H9Z" fill="url(#top)"/>
+  <path d="M9 32h46" stroke="#111318" stroke-width="5"/>
+  <circle cx="32" cy="32" r="8" fill="#f7f8fa" stroke="#111318" stroke-width="4"/>
+  <path d="m32 18 9 27h-6l-2-7h-8l-2 7h-6l9-27h6Zm-1 8-4 8h6l-2-8Z" fill="#111318"/>
+</svg>
