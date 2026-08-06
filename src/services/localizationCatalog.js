@@ -1,5 +1,5 @@
 const RAW_DATA_BASE = 'https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv';
-const STORAGE_PREFIX = 'pokedex-vue:de-catalog:v2:';
+const STORAGE_PREFIX = 'pokedex-vue:de-catalog:v3:';
 const GERMAN_LANGUAGE_ID = '6';
 const MAX_CACHE_AGE = 30 * 24 * 60 * 60 * 1000;
 
@@ -23,6 +23,21 @@ const CATALOGS = Object.freeze({
     idField: 'id',
     valueFields: ['identifier', 'species_id', 'is_default'],
   },
+  pokemonFormsIndex: {
+    file: 'pokemon_forms.csv',
+    idField: 'id',
+    valueFields: [
+      'identifier',
+      'form_identifier',
+      'pokemon_id',
+      'introduced_in_version_group_id',
+      'is_default',
+      'is_battle_only',
+      'is_mega',
+      'form_order',
+      'order',
+    ],
+  },
   moves: {
     file: 'move_names.csv',
     idField: 'move_id',
@@ -41,11 +56,27 @@ const CATALOGS = Object.freeze({
     languageField: 'local_language_id',
     valueFields: ['name'],
   },
+  itemIndex: {
+    file: 'items.csv',
+    idField: 'id',
+    valueFields: ['identifier', 'category_id', 'cost', 'fling_power', 'fling_effect_id'],
+  },
+  itemCategories: {
+    file: 'item_categories.csv',
+    idField: 'id',
+    valueFields: ['pocket_id', 'identifier'],
+  },
   locations: {
     file: 'location_names.csv',
     idField: 'location_id',
     languageField: 'local_language_id',
     valueFields: ['name', 'subtitle'],
+  },
+  locationGameIndices: {
+    file: 'location_game_indices.csv',
+    idField: 'location_id',
+    valueFields: ['generation_id', 'game_index'],
+    collect: true,
   },
 });
 
@@ -176,7 +207,7 @@ const storeCatalog = (key, catalog) => {
       entries: [...catalog.entries()],
     }));
   } catch {
-    // The in-memory catalog remains available if browser storage is full.
+    // In-memory data remains usable when browser storage is unavailable or full.
   }
 };
 
@@ -205,7 +236,14 @@ const loadCatalogInternal = async (kind) => {
       fieldName,
       row[indexes[fieldName]] || '',
     ]));
-    catalog.set(id, config.valueFields.length === 1 ? values[config.valueFields[0]] : values);
+    const value = config.valueFields.length === 1 ? values[config.valueFields[0]] : values;
+
+    if (config.collect) {
+      const existing = catalog.get(id) || [];
+      catalog.set(id, [...existing, value]);
+    } else {
+      catalog.set(id, value);
+    }
   }
 
   storeCatalog(kind, catalog);
@@ -222,6 +260,24 @@ export const loadGermanCatalog = (kind) => {
   return catalogPromises.get(kind);
 };
 
+const resolveFormLabel = ({ speciesName, formEntry, indexEntry }) => {
+  const explicitPokemonName = formEntry?.pokemon_name?.trim();
+  const explicitFormName = formEntry?.form_name?.trim();
+
+  if (explicitPokemonName) return explicitPokemonName;
+  if (explicitFormName && explicitFormName.toLocaleLowerCase('de-DE') !== speciesName.toLocaleLowerCase('de-DE')) {
+    return `${speciesName} – ${explicitFormName}`;
+  }
+
+  const identifier = indexEntry.identifier || '';
+  const defaultIdentifier = indexEntry.defaultIdentifier || '';
+  const suffix = defaultIdentifier && identifier.startsWith(`${defaultIdentifier}-`)
+    ? identifier.slice(defaultIdentifier.length + 1)
+    : '';
+  const localizedSuffix = FORM_SUFFIXES_DE[suffix];
+  return localizedSuffix ? `${speciesName} – ${localizedSuffix}` : speciesName;
+};
+
 export const loadGermanPokemonCatalog = async () => {
   const cacheKey = 'pokemon-combined';
   const stored = readStoredCatalog(cacheKey);
@@ -232,9 +288,11 @@ export const loadGermanPokemonCatalog = async () => {
     loadGermanCatalog('species'),
     loadGermanCatalog('forms'),
     loadGermanCatalog('pokemonIndex'),
-  ]).then(([speciesNames, formNames, pokemonIndex]) => {
+    loadGermanCatalog('pokemonFormsIndex'),
+  ]).then(([speciesNames, formNames, pokemonIndex, pokemonFormsIndex]) => {
     const combined = new Map();
     const defaultIdentifiersBySpecies = new Map();
+    const formRowsByPokemonId = new Map();
 
     for (const indexEntry of pokemonIndex.values()) {
       if (String(indexEntry.is_default) === '1') {
@@ -242,29 +300,28 @@ export const loadGermanPokemonCatalog = async () => {
       }
     }
 
-    for (const [pokemonId, indexEntry] of pokemonIndex.entries()) {
-      const speciesId = Number(indexEntry.species_id) || pokemonId;
-      const speciesName = speciesNames.get(speciesId) || formatFallbackName(indexEntry.identifier);
-      const formEntry = formNames.get(pokemonId);
-      const explicitPokemonName = formEntry?.pokemon_name?.trim();
-      const formName = formEntry?.form_name?.trim();
+    for (const [formId, formIndex] of pokemonFormsIndex.entries()) {
+      const pokemonId = Number(formIndex.pokemon_id);
+      if (!Number.isFinite(pokemonId)) continue;
+      const existing = formRowsByPokemonId.get(pokemonId) || [];
+      existing.push({ id: formId, ...formIndex });
+      formRowsByPokemonId.set(pokemonId, existing);
+    }
 
-      if (explicitPokemonName) {
-        combined.set(pokemonId, explicitPokemonName);
-        continue;
-      }
-      if (formName && formName.toLocaleLowerCase('de-DE') !== speciesName.toLocaleLowerCase('de-DE')) {
-        combined.set(pokemonId, `${speciesName} – ${formName}`);
-        continue;
-      }
-
-      const identifier = indexEntry.identifier || '';
+    for (const [pokemonId, rawIndexEntry] of pokemonIndex.entries()) {
+      const speciesId = Number(rawIndexEntry.species_id) || pokemonId;
+      const speciesName = speciesNames.get(speciesId) || formatFallbackName(rawIndexEntry.identifier);
       const defaultIdentifier = defaultIdentifiersBySpecies.get(speciesId) || '';
-      const suffix = defaultIdentifier && identifier.startsWith(`${defaultIdentifier}-`)
-        ? identifier.slice(defaultIdentifier.length + 1)
-        : '';
-      const localizedSuffix = FORM_SUFFIXES_DE[suffix];
-      combined.set(pokemonId, localizedSuffix ? `${speciesName} – ${localizedSuffix}` : speciesName);
+      const formRows = formRowsByPokemonId.get(Number(pokemonId)) || [];
+      const matchingForm = formRows.find((entry) => entry.identifier === rawIndexEntry.identifier)
+        || formRows.find((entry) => String(entry.is_default) === '1')
+        || formRows[0];
+      const formEntry = matchingForm ? formNames.get(Number(matchingForm.id)) : null;
+      combined.set(pokemonId, resolveFormLabel({
+        speciesName,
+        formEntry,
+        indexEntry: { ...rawIndexEntry, defaultIdentifier },
+      }));
     }
 
     storeCatalog(cacheKey, combined);
@@ -275,9 +332,19 @@ export const loadGermanPokemonCatalog = async () => {
   return request;
 };
 
-export const getCatalogLabel = (catalog, id, fallback = '') => (
-  catalog?.get(Number(id)) || formatFallbackName(fallback)
-);
+export const getCatalogLabel = (catalog, id, fallback = '') => {
+  const value = catalog?.get(Number(id));
+
+  if (typeof value === 'string' && value.trim()) return value;
+  if (value && !Array.isArray(value) && typeof value === 'object') {
+    return value.name?.trim()
+      || value.pokemon_name?.trim()
+      || value.form_name?.trim()
+      || value.identifier?.trim()
+      || formatFallbackName(fallback);
+  }
+  return formatFallbackName(fallback);
+};
 
 export const getLocalizedVersionName = (name = '', language = 'en') => (
   language === 'de' ? VERSION_NAMES_DE[name] || formatFallbackName(name) : formatFallbackName(name)
