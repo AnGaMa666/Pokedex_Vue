@@ -1,5 +1,33 @@
 <template>
   <section class="home-page" :aria-label="t('section.home.label')">
+    <header class="creator-hero">
+      <div class="creator-copy">
+        <p class="creator-kicker">{{ brandContent.kicker }}</p>
+        <h1>{{ brandContent.title }}</h1>
+        <p>{{ brandContent.description }}</p>
+        <small>{{ brandContent.disclaimer }}</small>
+      </div>
+
+      <div class="creator-links" aria-label="AnGaMa Profile">
+        <a
+          href="https://www.twitch.tv/angama666"
+          target="_blank"
+          rel="me external noopener noreferrer"
+        >
+          <span aria-hidden="true">▶</span>
+          {{ brandContent.twitch }}
+        </a>
+        <a
+          href="https://github.com/AnGaMa666/Pokedex_Vue"
+          target="_blank"
+          rel="external noopener noreferrer"
+        >
+          <span aria-hidden="true">&lt;/&gt;</span>
+          {{ brandContent.github }}
+        </a>
+      </div>
+    </header>
+
     <div class="section-grid">
       <a
         v-for="section in sections"
@@ -12,7 +40,7 @@
         </span>
         <div class="section-copy">
           <p class="section-kicker">{{ section.kicker }}</p>
-          <h1>{{ section.title }}</h1>
+          <h2>{{ section.title }}</h2>
           <p>{{ section.description }}</p>
         </div>
         <span class="request-note">{{ section.requestNote }}</span>
@@ -25,7 +53,25 @@
 import { computed } from 'vue';
 import { useI18n } from '@/i18n';
 
-const { t } = useI18n();
+const { language, t } = useI18n();
+
+const brandContent = computed(() => language.value === 'de'
+  ? {
+      kicker: 'Ein Projekt von AnGaMa',
+      title: 'AnGaMa Pokédex',
+      description: 'Der kostenlose Pokémon Explorer von AnGaMa und dem Twitch-Kanal AnGaMa666 verbindet den nationalen Pokédex mit Entwicklungen, Attacken, Items, Routen, Fangchancen und einem kompetitiven Team Builder.',
+      twitch: 'AnGaMa666 auf Twitch',
+      github: 'Quellcode auf GitHub',
+      disclaimer: 'Unabhängiges Fanprojekt. Nicht mit Nintendo, GAME FREAK oder The Pokémon Company verbunden.',
+    }
+  : {
+      kicker: 'A project by AnGaMa',
+      title: 'AnGaMa Pokédex',
+      description: 'The free Pokémon Explorer by AnGaMa and the Twitch channel AnGaMa666 combines the National Pokédex with evolutions, moves, items, routes, catch chances and a competitive team builder.',
+      twitch: 'AnGaMa666 on Twitch',
+      github: 'Source code on GitHub',
+      disclaimer: 'Independent fan project. Not affiliated with Nintendo, GAME FREAK or The Pokémon Company.',
+    });
 
 const sections = computed(() => [
   {
@@ -99,6 +145,101 @@ const sections = computed(() => [
 .home-page {
   display: grid;
   gap: 18px;
+}
+
+.creator-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  padding: clamp(22px, 4vw, 42px);
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  color: var(--legacy-text);
+  background:
+    radial-gradient(circle at 90% 15%, color-mix(in srgb, #ef4444 18%, transparent), transparent 34%),
+    radial-gradient(circle at 78% 90%, color-mix(in srgb, #2563eb 18%, transparent), transparent 38%),
+    var(--legacy-surface);
+  box-shadow: 0 2px 5px var(--legacy-shadow);
+}
+
+.creator-copy {
+  min-width: 0;
+}
+
+.creator-kicker {
+  margin: 0 0 8px;
+  color: var(--legacy-muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.creator-hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+
+.creator-copy > p:not(.creator-kicker) {
+  max-width: 920px;
+  margin: 16px 0 0;
+  color: var(--legacy-muted);
+  font-size: clamp(0.9rem, 1.2vw, 1.05rem);
+  line-height: 1.65;
+}
+
+.creator-copy small {
+  display: block;
+  margin-top: 14px;
+  color: var(--legacy-muted);
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.creator-links {
+  display: grid;
+  gap: 10px;
+  min-width: min(100%, 250px);
+}
+
+.creator-links a {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 7px 12px;
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  color: var(--legacy-text);
+  font-size: 0.8rem;
+  font-weight: 850;
+  text-decoration: none;
+  background: color-mix(in srgb, var(--legacy-page) 88%, transparent);
+}
+
+.creator-links a:hover {
+  border-color: var(--legacy-border-strong);
+  background: var(--legacy-surface-hover);
+}
+
+.creator-links a:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 3px;
+}
+
+.creator-links a span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  background: var(--legacy-surface);
 }
 
 .section-grid {
@@ -184,7 +325,7 @@ const sections = computed(() => [
   text-transform: uppercase;
 }
 
-.section-card h1 {
+.section-card h2 {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--legacy-text);
@@ -214,12 +355,21 @@ const sections = computed(() => [
 }
 
 @media (max-width: 1050px) {
+  .creator-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .creator-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .section-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 620px) {
+  .creator-links,
   .section-grid {
     grid-template-columns: 1fr;
   }
@@ -230,6 +380,10 @@ const sections = computed(() => [
 }
 
 @media (max-width: 420px) {
+  .creator-hero {
+    padding: 18px;
+  }
+
   .section-card {
     grid-template-columns: 44px minmax(0, 1fr);
     padding: 14px;

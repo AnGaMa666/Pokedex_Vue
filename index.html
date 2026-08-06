@@ -1,16 +1,246 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>AnGaMa Pokédex – Pokémon, Attacken, Items und Team Builder</title>
     <meta
       name="description"
-      content="A responsive Pokédex with Pokémon details, evolution chains, moves and shiny sprites."
+      content="Der kostenlose AnGaMa Pokédex von Twitch-Creator AnGaMa666: Pokémon, Formen, Entwicklungen, Attacken, Items, Beeren, Pokébälle, Routen, Fangchancen und Team Builder."
     >
-    <title>Pokédex</title>
+    <meta name="author" content="AnGaMa">
+    <meta name="creator" content="AnGaMa / AnGaMa666">
+    <meta name="publisher" content="AnGaMa">
+    <meta name="application-name" content="AnGaMa Pokédex">
+    <meta name="theme-color" content="#111318">
+    <meta name="color-scheme" content="light dark">
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    >
+    <meta
+      name="googlebot"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    >
+    <meta
+      name="bingbot"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    >
+
+    <link rel="canonical" href="https://pokedex.byangama.de/">
+    <link rel="me" href="https://www.twitch.tv/angama666">
+    <link rel="author" href="https://www.twitch.tv/angama666">
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="preconnect" href="https://pokeapi.co" crossorigin>
+    <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="AnGaMa Pokédex">
+    <meta property="og:locale" content="de_DE">
+    <meta property="og:locale:alternate" content="en_US">
+    <meta property="og:url" content="https://pokedex.byangama.de/">
+    <meta
+      property="og:title"
+      content="AnGaMa Pokédex – der Pokémon Explorer von AnGaMa666"
+    >
+    <meta
+      property="og:description"
+      content="Pokémon, Formen, Entwicklungen, Attacken, Items, Beeren, Pokébälle, Routen, Fangchancen und kompetitive Teams – entwickelt von AnGaMa."
+    >
+    <meta
+      property="og:image"
+      content="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
+    >
+    <meta property="og:image:alt" content="Pokéball-Symbol des AnGaMa Pokédex">
+
+    <meta name="twitter:card" content="summary">
+    <meta
+      name="twitter:title"
+      content="AnGaMa Pokédex – Pokémon Explorer von AnGaMa666"
+    >
+    <meta
+      name="twitter:description"
+      content="Kostenloser Pokédex mit Pokémon, Attacken, Items, Routen, Fangchancen und Team Builder."
+    >
+    <meta
+      name="twitter:image"
+      content="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
+    >
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://pokedex.byangama.de/#angama",
+            "name": "AnGaMa",
+            "alternateName": [
+              "AnGaMa666",
+              "AnGaMa Pokédex"
+            ],
+            "url": "https://pokedex.byangama.de/",
+            "description": "AnGaMa entwickelt den kostenlosen AnGaMa Pokédex und veröffentlicht Gaming-Inhalte auf Twitch unter dem Namen AnGaMa666.",
+            "sameAs": [
+              "https://www.twitch.tv/angama666",
+              "https://github.com/AnGaMa666",
+              "https://github.com/AnGaMa666/Pokedex_Vue"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://pokedex.byangama.de/#website",
+            "url": "https://pokedex.byangama.de/",
+            "name": "AnGaMa Pokédex",
+            "alternateName": [
+              "Pokémon Explorer",
+              "AnGaMa Pokémon Explorer"
+            ],
+            "description": "Ein deutsch- und englischsprachiger Pokédex mit Pokémon-Profilen, Entwicklungen, Attacken, Items, Beeren, Pokébällen, Routen, Fangchancen und Team Builder.",
+            "inLanguage": [
+              "de",
+              "en"
+            ],
+            "publisher": {
+              "@id": "https://pokedex.byangama.de/#angama"
+            }
+          },
+          {
+            "@type": "WebApplication",
+            "@id": "https://pokedex.byangama.de/#application",
+            "url": "https://pokedex.byangama.de/",
+            "name": "AnGaMa Pokédex",
+            "alternateName": "Pokémon Explorer",
+            "applicationCategory": "ReferenceApplication",
+            "operatingSystem": "Webbrowser",
+            "browserRequirements": "JavaScript und ein moderner Webbrowser",
+            "isAccessibleForFree": true,
+            "inLanguage": [
+              "de",
+              "en"
+            ],
+            "author": {
+              "@id": "https://pokedex.byangama.de/#angama"
+            },
+            "publisher": {
+              "@id": "https://pokedex.byangama.de/#angama"
+            },
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "EUR"
+            },
+            "featureList": [
+              "Nationaler Pokédex mit Formen und Varianten",
+              "Entwicklungsreihen und Fangchancen",
+              "Attacken-, Item-, Beeren- und Pokéballverzeichnisse",
+              "Routen und wilde Begegnungen nach Spiel",
+              "EV-, IV- und Wesen-Rechner",
+              "Kompetitiver Team Builder"
+            ],
+            "about": [
+              {
+                "@type": "Thing",
+                "name": "Pokémon"
+              },
+              {
+                "@type": "Thing",
+                "name": "Pokédex"
+              }
+            ],
+            "isBasedOn": "https://pokeapi.co/"
+          }
+        ]
+      }
+    </script>
+
+    <style>
+      .seo-fallback {
+        box-sizing: border-box;
+        max-width: 1040px;
+        padding: 32px;
+        margin: 40px auto;
+        border: 1px solid #d7dbe2;
+        border-radius: 8px;
+        color: #20242b;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #ffffff;
+      }
+
+      .seo-fallback h1 {
+        margin: 0;
+        font-size: clamp(2rem, 6vw, 4rem);
+        line-height: 1.05;
+      }
+
+      .seo-fallback p {
+        line-height: 1.65;
+      }
+
+      .seo-fallback nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 24px 0;
+      }
+
+      .seo-fallback a {
+        color: #175cd3;
+      }
+
+      .seo-fallback nav a {
+        padding: 8px 12px;
+        border: 1px solid #b8c4d8;
+        border-radius: 4px;
+        text-decoration: none;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .seo-fallback {
+          border-color: #3b414d;
+          color: #eef1f5;
+          background: #111318;
+        }
+
+        .seo-fallback a {
+          color: #8bb7ff;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <main class="seo-fallback">
+        <p><strong>AnGaMa · Twitch: AnGaMa666</strong></p>
+        <h1>AnGaMa Pokédex</h1>
+        <p>
+          Der AnGaMa Pokédex ist ein kostenloser Pokémon Explorer von AnGaMa,
+          dem Gaming-Creator hinter dem Twitch-Kanal AnGaMa666. Er enthält den
+          nationalen Pokédex, Formen und Varianten, Entwicklungen, Attacken,
+          Items, Beeren, Pokébälle, Routen, Fangchancen sowie einen Team Builder.
+        </p>
+        <nav aria-label="Bereiche des AnGaMa Pokédex">
+          <a href="#pokedex">Pokédex</a>
+          <a href="#moves">Attacken</a>
+          <a href="#items">Items</a>
+          <a href="#berries">Beeren</a>
+          <a href="#balls">Pokébälle</a>
+          <a href="#routes">Routen</a>
+          <a href="#team">Team Builder</a>
+        </nav>
+        <p>
+          Mehr von AnGaMa gibt es auf
+          <a href="https://www.twitch.tv/angama666" rel="me external">Twitch bei AnGaMa666</a>.
+        </p>
+        <small>
+          Unabhängiges Fanprojekt. Pokémon und zugehörige Namen sind Eigentum
+          ihrer jeweiligen Rechteinhaber. Dieses Projekt ist nicht mit Nintendo,
+          GAME FREAK oder The Pokémon Company verbunden.
+        </small>
+      </main>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
