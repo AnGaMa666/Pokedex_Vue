@@ -1,6 +1,26 @@
-const normalizeName = (resource) => resource?.name || '';
+import { getResourceId } from './resource.js';
+
+const normalizeName = (resource) => {
+  if (typeof resource === 'string') return resource;
+  return resource?.name || '';
+};
+
+const normalizeUrl = (resource) => resource?.url || '';
+
+const normalizeNullableBoolean = (value) => (
+  typeof value === 'boolean' ? value : null
+);
+
+const getVersionGroupReference = (detail = {}) => (
+  detail.version_group || detail.version_group_id || null
+);
 
 const normalizeDetail = (detail = {}) => ({
+  versionGroup: normalizeName(getVersionGroupReference(detail)),
+  versionGroupId: Number.isInteger(detail.version_group_id)
+    ? detail.version_group_id
+    : getResourceId(normalizeUrl(getVersionGroupReference(detail))),
+  isDefault: normalizeNullableBoolean(detail.is_default),
   trigger: normalizeName(detail.trigger),
   item: normalizeName(detail.item),
   heldItem: normalizeName(detail.held_item),
@@ -14,11 +34,22 @@ const normalizeDetail = (detail = {}) => ({
   knownMove: normalizeName(detail.known_move),
   knownMoveType: normalizeName(detail.known_move_type),
   location: normalizeName(detail.location),
+  nearSpecialRock: Boolean(detail.near_special_rock),
+  needsMultiplayer: Boolean(detail.needs_multiplayer),
   needsOverworldRain: Boolean(detail.needs_overworld_rain),
   turnUpsideDown: Boolean(detail.turn_upside_down),
   partySpecies: normalizeName(detail.party_species),
   partyType: normalizeName(detail.party_type),
   tradeSpecies: normalizeName(detail.trade_species),
+  region: normalizeName(detail.region),
+  baseForm: normalizeName(detail.base_form),
+  baseFormUrl: normalizeUrl(detail.base_form),
+  evolvedForm: normalizeName(detail.evolved_form),
+  evolvedFormUrl: normalizeUrl(detail.evolved_form),
+  usedMove: normalizeName(detail.used_move),
+  minMoveCount: detail.min_move_count ?? null,
+  minSteps: detail.min_steps ?? null,
+  minDamageTaken: detail.min_damage_taken ?? null,
 });
 
 const createDetailKey = (detail) => JSON.stringify(detail);
@@ -75,6 +106,7 @@ export const collectEvolutionResourceNames = (transitions = []) => {
       if (detail.item) names.items.add(detail.item);
       if (detail.heldItem) names.items.add(detail.heldItem);
       if (detail.knownMove) names.moves.add(detail.knownMove);
+      if (detail.usedMove) names.moves.add(detail.usedMove);
       if (detail.location) names.locations.add(detail.location);
       if (detail.partySpecies) names.species.add(detail.partySpecies);
       if (detail.tradeSpecies) names.species.add(detail.tradeSpecies);
@@ -87,4 +119,55 @@ export const collectEvolutionResourceNames = (transitions = []) => {
     locations: [...names.locations].filter(Boolean),
     species: [...names.species].filter(Boolean),
   };
+};
+
+export const normalizePokemonFormConditions = (forms = []) => forms
+  .map((form) => ({
+    id: Number(form?.id) || null,
+    name: form?.name || '',
+    names: Array.isArray(form?.names) ? form.names : [],
+    formNames: Array.isArray(form?.form_names) ? form.form_names : [],
+    formName: form?.form_name || '',
+    pokemonName: normalizeName(form?.pokemon),
+    pokemonUrl: normalizeUrl(form?.pokemon),
+    isBattleOnly: Boolean(form?.is_battle_only),
+    isMega: Boolean(form?.is_mega),
+    conditions: (form?.trigger_conditions || [])
+      .filter((condition) => condition?.trigger)
+      .map((condition) => ({
+        trigger: condition.trigger,
+        name: condition.name || '',
+        url: condition.url || '',
+        resourceKind: condition.url?.match(/\/api\/v2\/([^/]+)\//)?.[1] || '',
+        baseForm: normalizeName(condition.base_form),
+        baseFormUrl: normalizeUrl(condition.base_form),
+      })),
+  }))
+  .filter((form) => form.name && form.conditions.length);
+
+export const collectPokemonFormConditionResources = (forms = []) => {
+  const resources = {
+    abilities: new Set(),
+    baseForms: new Set(),
+    items: new Set(),
+    moves: new Set(),
+  };
+
+  for (const form of forms) {
+    for (const condition of form.conditions || []) {
+      if (condition.resourceKind === 'item' && condition.name) {
+        resources.items.add(condition.name);
+      } else if (condition.resourceKind === 'move' && condition.name) {
+        resources.moves.add(condition.name);
+      } else if (condition.resourceKind === 'ability' && condition.name) {
+        resources.abilities.add(condition.name);
+      }
+
+      if (condition.baseForm) resources.baseForms.add(condition.baseForm);
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(resources).map(([key, values]) => [key, [...values]]),
+  );
 };

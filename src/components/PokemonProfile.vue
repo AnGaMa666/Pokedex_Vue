@@ -3,14 +3,14 @@
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
     <p v-else-if="hasError" class="error-message" role="alert">{{ labels.loadError }}</p>
 
-    <template v-else-if="pokemonDetails && species">
+    <template v-else-if="activeConcreteDetails && species">
       <header class="profile-header" :style="profileStyle">
         <div class="profile-copy">
           <p class="profile-number">#{{ formatResourceId(species.id) }}</p>
           <h2>{{ displayName }}</h2>
           <div class="type-list">
             <span
-              v-for="typeEntry in pokemonDetails.types"
+              v-for="typeEntry in activeConcreteDetails.types"
               :key="typeEntry.type.name"
               class="type-badge"
               :style="{ backgroundColor: getTypeColor(typeEntry.type.name) }"
@@ -37,6 +37,18 @@
         </div>
       </header>
 
+      <section v-if="profileFormOptions.length > 1" class="active-form-selector">
+        <label>
+          <span>{{ labels.activeForm }}</span>
+          <select :value="activeConcreteDetails.name" @change="selectProfileForm">
+            <option v-for="option in profileFormOptions" :key="option.name" :value="option.name">
+              {{ option.label }} · {{ option.isDefault ? labels.standardForm : labels.variantForm }}
+            </option>
+          </select>
+          <small>{{ labels.activeFormHint }}</small>
+        </label>
+      </section>
+
       <section class="description-card">
         <p :lang="language">{{ flavorText }}</p>
       </section>
@@ -44,11 +56,11 @@
       <dl class="facts-grid">
         <div>
           <dt>{{ labels.height }}</dt>
-          <dd>{{ formatNumber(pokemonDetails.height / 10) }} m</dd>
+          <dd>{{ formatNumber(activeConcreteDetails.height / 10) }} m</dd>
         </div>
         <div>
           <dt>{{ labels.weight }}</dt>
-          <dd>{{ formatNumber(pokemonDetails.weight / 10) }} kg</dd>
+          <dd>{{ formatNumber(activeConcreteDetails.weight / 10) }} kg</dd>
         </div>
         <div>
           <dt>{{ labels.captureRate }}</dt>
@@ -60,7 +72,7 @@
         </div>
         <div>
           <dt>{{ labels.baseExperience }}</dt>
-          <dd>{{ pokemonDetails.base_experience ?? labels.unknown }}</dd>
+          <dd>{{ activeConcreteDetails.base_experience ?? labels.unknown }}</dd>
         </div>
         <div>
           <dt>{{ labels.generation }}</dt>
@@ -68,7 +80,7 @@
         </div>
         <div>
           <dt>{{ labels.abilities }}</dt>
-          <dd>{{ formatAbilities(pokemonDetails.abilities) }}</dd>
+          <dd>{{ formatAbilities(activeConcreteDetails.abilities) }}</dd>
         </div>
         <div>
           <dt>{{ labels.regionalNumbers }}</dt>
@@ -274,7 +286,7 @@
       <section class="tools-grid">
         <CaptureCalculator
           :capture-rate="species.capture_rate"
-          :pokemon-details="pokemonDetails"
+          :pokemon-details="activeConcreteDetails"
           :is-ultra-beast="classifications.includes('ultra-beast')"
         />
         <StatCalculator :pokemon-details="pokemonDetails" />
@@ -284,9 +296,16 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
+import { loadGermanPokemonCatalog } from '@/services/localizationCatalog';
+import { useActivePokemonForm } from '@/state/activePokemonForm';
 import { getEvolutionItem } from '@/utils/evolution';
 import { getFinalEvolutionSpeciesNames } from '@/utils/evolutionChain';
 import {
@@ -295,7 +314,16 @@ import {
   getLocalizedTypeName,
 } from '@/utils/localization';
 import { getPokemonClassifications } from '@/utils/pokemonClassification';
-import { getSpecialBattleForms, isSpecialBattleForm } from '@/utils/pokemonForms';
+import {
+  createPokemonVarietyOptions,
+  getDefaultPokemonVariety,
+  getPokemonFormLabel,
+  isPokemonForSpecies,
+  mapWithConcurrency,
+  matchesPokemonReference,
+  getSpecialBattleForms,
+  isSpecialBattleForm,
+} from '@/utils/pokemonForms';
 import {
   formatResourceId,
   formatResourceName,
@@ -324,6 +352,14 @@ const props = defineProps({
 
 const emit = defineEmits(['detailsLoaded', 'openResource']);
 const { language } = useI18n();
+const {
+  activePokemonForm,
+  clearActivePokemonForm,
+  initializeActivePokemonForm,
+  setActivePokemonForm,
+  setDefaultPokemonForm,
+} = useActivePokemonForm();
+const MAX_PARALLEL_REQUESTS = 6;
 
 const emptyDamageRelations = () => ({
   immunities: [],
@@ -334,6 +370,7 @@ const emptyDamageRelations = () => ({
 
 const pokemonDetails = ref(null);
 const species = ref(null);
+const pokemonCatalog = ref(new Map());
 const rawEvolutionChain = ref(null);
 const damageRelations = ref(emptyDamageRelations());
 const variantDetailsByName = ref({});
@@ -345,6 +382,7 @@ const itemDetailsByName = ref({});
 const loading = ref(false);
 const hasError = ref(false);
 let activeRequestId = 0;
+let activeDamageRequestId = 0;
 
 const labels = computed(() => language.value === 'de'
   ? {
@@ -357,6 +395,10 @@ const labels = computed(() => language.value === 'de'
       baseExperience: 'Basis-Erfahrung',
       generation: 'Generation',
       abilities: 'Fähigkeiten',
+      activeForm: 'Aktive Pokémon-Form',
+      activeFormHint: 'Sprite, Typen, Fähigkeiten, Werte, Rechner und Attacken verwenden gemeinsam diese konkrete Form.',
+      standardForm: 'Standardform',
+      variantForm: 'Form',
       regionalNumbers: 'Regionale Nummern',
       weaknesses: 'Schwächen',
       resistances: 'Resistenzen',
@@ -405,6 +447,10 @@ const labels = computed(() => language.value === 'de'
       baseExperience: 'Base experience',
       generation: 'Generation',
       abilities: 'Abilities',
+      activeForm: 'Active Pokémon form',
+      activeFormHint: 'Sprite, types, abilities, stats, calculator and moves all use this concrete form.',
+      standardForm: 'Default form',
+      variantForm: 'Form',
       regionalNumbers: 'Regional numbers',
       weaknesses: 'Weaknesses',
       resistances: 'Resistances',
@@ -466,13 +512,29 @@ const classificationLabels = computed(() => language.value === 'de'
       regular: 'Regular',
     });
 
-const displayName = computed(() => getLocalizedName(
-  species.value?.names,
-  pokemonDetails.value?.name,
-  language.value,
+const activeConcreteDetails = computed(() => (
+  activePokemonForm.value
+  && species.value
+  && isPokemonForSpecies(activePokemonForm.value, species.value)
+    ? activePokemonForm.value
+    : pokemonDetails.value
 ));
+const profileFormOptions = computed(() => createPokemonVarietyOptions({
+  species: species.value || {},
+  detailsByName: variantDetailsByName.value,
+  catalog: pokemonCatalog.value,
+  language: language.value,
+}));
+const displayName = computed(() => activeConcreteDetails.value
+  ? getPokemonFormLabel({
+      details: activeConcreteDetails.value,
+      species: species.value || {},
+      catalog: pokemonCatalog.value,
+      language: language.value,
+    })
+  : '');
 const mainSprite = computed(() => getPokemonSprite(
-  pokemonDetails.value,
+  activeConcreteDetails.value,
   props.spriteMode,
   props.isShiny,
 ));
@@ -483,7 +545,7 @@ const spriteDescription = computed(() => {
   return `${shinyLabel} ${getSpriteModeLabel(props.spriteMode, language.value)}`;
 });
 const profileStyle = computed(() => ({
-  '--pokemon-gradient': getTypeGradient(pokemonDetails.value?.types || []),
+  '--pokemon-gradient': getTypeGradient(activeConcreteDetails.value?.types || []),
 }));
 const classifications = computed(() => getPokemonClassifications(
   species.value?.id,
@@ -507,15 +569,9 @@ const regionalNumberSummary = computed(() => {
     .map((entry) => `${formatResourceName(entry.pokedex.name)} #${entry.entry_number}`)
     .join(' · ');
 });
-const regularVariants = computed(() => {
-  return (species.value?.varieties || [])
-    .filter((variety) => !variety.is_default && !isSpecialBattleForm(variety.pokemon?.name))
-    .map((variety) => ({
-      name: variety.pokemon.name,
-      id: getResourceId(variety.pokemon.url),
-      details: variantDetailsByName.value[variety.pokemon.name] || null,
-    }));
-});
+const regularVariants = computed(() => profileFormOptions.value.filter((option) => (
+  !option.isDefault && !isSpecialBattleForm(option.name)
+)));
 
 const resolveEvolutionNode = (node, stage = 0) => {
   const currentEntry = {
@@ -586,11 +642,12 @@ const getItemLabel = (name) => getLocalizedName(
   name,
   language.value,
 );
-const getVariantLabel = (variant) => getLocalizedName(
-  variant.details?.forms?.[0]?.names,
-  variant.name,
-  language.value,
-);
+const getVariantLabel = (variant) => getPokemonFormLabel({
+  details: variant.details,
+  species: species.value || {},
+  catalog: pokemonCatalog.value,
+  language: language.value,
+});
 const getVariantSprite = (variant) => getPokemonSprite(
   variant.details,
   props.spriteMode,
@@ -618,6 +675,10 @@ const getSpecialLabel = (form, group) => getLocalizedSpecialFormName({
 const getTypedCardStyle = (types = []) => types?.length
   ? { background: getTypeGradient(types) }
   : {};
+const selectProfileForm = (event) => {
+  const option = profileFormOptions.value.find((entry) => entry.name === event.target.value);
+  if (option) setActivePokemonForm(option.details);
+};
 const openItem = (name) => emit('openResource', { kind: 'items', name });
 const useSpriteFallback = (event) => {
   const fallback = getPokemonListSprite(species.value?.id, 'pixel', props.isShiny);
@@ -633,13 +694,7 @@ const replaceLabel = (template, replacements) => {
   }, template);
 };
 
-const formatEvolutionMethod = (details = []) => {
-  const detail = details[0];
-
-  if (!detail) {
-    return '';
-  }
-
+const formatEvolutionDetail = (detail) => {
   const parts = [];
   const trigger = detail.trigger?.name;
 
@@ -722,6 +777,11 @@ const formatEvolutionMethod = (details = []) => {
   return parts.join(' · ');
 };
 
+const formatEvolutionMethod = (details = []) => details
+  .map(formatEvolutionDetail)
+  .filter(Boolean)
+  .join(' / ');
+
 const collectEvolutionItemNames = (node) => {
   if (!node) {
     return [];
@@ -735,10 +795,47 @@ const collectEvolutionItemNames = (node) => {
   ];
 };
 
+const loadResources = (resources, loader, resourceKind) => mapWithConcurrency(
+  [...resources],
+  async (resource) => {
+    try {
+      const response = await loader(resource);
+      return response.data;
+    } catch (error) {
+      const name = resource?.name || resource;
+      console.error(`Failed to load ${resourceKind} ${name}:`, error);
+      return null;
+    }
+  },
+  MAX_PARALLEL_REQUESTS,
+);
+
+const loadActiveDamageRelations = async (details) => {
+  const requestId = ++activeDamageRequestId;
+  damageRelations.value = emptyDamageRelations();
+  if (!details?.types?.length) return;
+
+  try {
+    const relations = await PokeAPI.getPokemonDamageRelations(details.types);
+    if (
+      requestId === activeDamageRequestId
+      && activeConcreteDetails.value?.name === details.name
+    ) {
+      damageRelations.value = relations;
+    }
+  } catch (error) {
+    if (requestId === activeDamageRequestId) {
+      console.error(`Failed to load damage relations for ${details.name}:`, error);
+    }
+  }
+};
+
 const loadProfile = async (name) => {
   const requestId = ++activeRequestId;
+  activeDamageRequestId += 1;
   loading.value = true;
   hasError.value = false;
+  clearActivePokemonForm();
   pokemonDetails.value = null;
   species.value = null;
   rawEvolutionChain.value = null;
@@ -752,17 +849,26 @@ const loadProfile = async (name) => {
   emit('detailsLoaded', null);
 
   try {
-    const [detailsResponse, speciesResponse] = await Promise.all([
-      PokeAPI.getPokemonDetails(name),
-      PokeAPI.getPokemonSpecies(name),
-    ]);
+    const detailsResponse = await PokeAPI.getPokemonDetails(name);
     const details = detailsResponse.data;
+    if (!matchesPokemonReference(details, props.pokemon)) {
+      throw new Error(`Pokémon response did not match requested variety ${name}.`);
+    }
+
+    const speciesName = details.species?.name;
+    if (!speciesName) throw new Error(`Pokémon ${details.name} has no species reference.`);
+
+    const speciesResponse = await PokeAPI.getPokemonSpecies(speciesName);
     const resolvedSpecies = speciesResponse.data;
-    const [damageResult, evolutionResult] = await Promise.allSettled([
-      PokeAPI.getPokemonDamageRelations(details.types),
+    if (!isPokemonForSpecies(details, resolvedSpecies)) {
+      throw new Error(`Pokémon ${details.name} does not belong to species ${resolvedSpecies.name}.`);
+    }
+
+    const [evolutionResult, catalogResult] = await Promise.allSettled([
       resolvedSpecies.evolution_chain?.url
         ? PokeAPI.getEvolutionChain(resolvedSpecies.evolution_chain.url)
         : Promise.resolve({ data: { chain: null } }),
+      language.value === 'de' ? loadGermanPokemonCatalog() : Promise.resolve(new Map()),
     ]);
 
     if (requestId !== activeRequestId) {
@@ -771,13 +877,16 @@ const loadProfile = async (name) => {
 
     pokemonDetails.value = details;
     species.value = resolvedSpecies;
-    damageRelations.value = damageResult.status === 'fulfilled'
-      ? damageResult.value
-      : emptyDamageRelations();
+    pokemonCatalog.value = catalogResult.status === 'fulfilled'
+      ? catalogResult.value
+      : new Map();
+    variantDetailsByName.value = { [details.name]: details };
     rawEvolutionChain.value = evolutionResult.status === 'fulfilled'
       ? evolutionResult.value.data.chain
       : null;
-    emit('detailsLoaded', details);
+    if (!initializeActivePokemonForm(details, resolvedSpecies)) {
+      throw new Error(`Unable to initialize the active form for ${details.name}.`);
+    }
 
     const evolutionNames = rawEvolutionChain.value
       ? resolveEvolutionNode(rawEvolutionChain.value).map((entry) => entry.name)
@@ -785,14 +894,14 @@ const loadProfile = async (name) => {
     const finalNames = rawEvolutionChain.value
       ? getFinalEvolutionSpeciesNames(rawEvolutionChain.value)
       : [resolvedSpecies.name];
-    const variantNames = (resolvedSpecies.varieties || [])
-      .filter((variety) => !variety.is_default)
-      .map((variety) => variety.pokemon.name);
+    const varietyReferences = (resolvedSpecies.varieties || [])
+      .map((variety) => variety.pokemon)
+      .filter((reference) => reference?.name && reference.name !== details.name);
 
     const [variantResults, evolutionSpeciesResults, finalSpeciesResults] = await Promise.all([
-      Promise.allSettled(variantNames.map((variantName) => PokeAPI.getPokemonDetails(variantName))),
-      Promise.allSettled([...new Set(evolutionNames)].map((speciesName) => PokeAPI.getPokemonSpecies(speciesName))),
-      Promise.allSettled([...new Set(finalNames)].map((speciesName) => PokeAPI.getPokemonSpecies(speciesName))),
+      loadResources(varietyReferences, (reference) => PokeAPI.getPokemonDetails(reference.name), 'Pokémon variety'),
+      loadResources([...new Set(evolutionNames)], PokeAPI.getPokemonSpecies, 'Pokémon species'),
+      loadResources([...new Set(finalNames)], PokeAPI.getPokemonSpecies, 'final Pokémon species'),
     ]);
 
     if (requestId !== activeRequestId) {
@@ -800,18 +909,21 @@ const loadProfile = async (name) => {
     }
 
     variantDetailsByName.value = Object.fromEntries(
-      variantResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => [result.value.data.name, result.value.data]),
+      [details, ...variantResults.filter(Boolean)].map((entry) => [entry.name, entry]),
     );
     evolutionSpeciesByName.value = Object.fromEntries(
-      evolutionSpeciesResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => [result.value.data.name, result.value.data]),
+      evolutionSpeciesResults.filter(Boolean).map((entry) => [entry.name, entry]),
     );
-    finalSpecies.value = finalSpeciesResults
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => result.value.data);
+    finalSpecies.value = finalSpeciesResults.filter(Boolean);
+
+    const verifiedOptions = createPokemonVarietyOptions({
+      species: resolvedSpecies,
+      detailsByName: variantDetailsByName.value,
+      catalog: pokemonCatalog.value,
+      language: language.value,
+    });
+    const defaultOption = getDefaultPokemonVariety(verifiedOptions);
+    if (defaultOption) setDefaultPokemonForm(defaultOption.details);
 
     const specialForms = finalSpecies.value.flatMap((entry) => {
       return getSpecialBattleForms(entry.varieties || []);
@@ -822,9 +934,13 @@ const loadProfile = async (name) => {
     ])];
 
     const [sourceResults, specialResults, itemResults] = await Promise.all([
-      Promise.allSettled(finalSpecies.value.map((entry) => PokeAPI.getPokemonDetails(entry.name))),
-      Promise.allSettled(specialForms.map((form) => PokeAPI.getPokemonDetails(form.name))),
-      Promise.allSettled(itemNames.map((itemName) => PokeAPI.getItemDetails(itemName))),
+      loadResources(finalSpecies.value, (entry) => {
+        const defaultName = entry.varieties?.find((variety) => variety.is_default)?.pokemon?.name
+          || entry.name;
+        return PokeAPI.getPokemonDetails(defaultName);
+      }, 'default Pokémon variety'),
+      loadResources(specialForms, (form) => PokeAPI.getPokemonDetails(form.name), 'special Pokémon form'),
+      loadResources(itemNames, PokeAPI.getItemDetails, 'item'),
     ]);
 
     if (requestId !== activeRequestId) {
@@ -832,19 +948,13 @@ const loadProfile = async (name) => {
     }
 
     finalPokemonDetailsByName.value = Object.fromEntries(
-      sourceResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => [result.value.data.name, result.value.data]),
+      sourceResults.filter(Boolean).map((entry) => [entry.species?.name || entry.name, entry]),
     );
     specialFormDetailsByName.value = Object.fromEntries(
-      specialResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => [result.value.data.name, result.value.data]),
+      specialResults.filter(Boolean).map((entry) => [entry.name, entry]),
     );
     itemDetailsByName.value = Object.fromEntries(
-      itemResults
-        .filter((result) => result.status === 'fulfilled')
-        .map((result) => [result.value.data.name, result.value.data]),
+      itemResults.filter(Boolean).map((entry) => [entry.name, entry]),
     );
   } catch (requestError) {
     if (requestId !== activeRequestId) {
@@ -870,6 +980,31 @@ watch(
   },
   { immediate: true },
 );
+
+watch(activePokemonForm, (details) => {
+  if (!details || !species.value || !isPokemonForSpecies(details, species.value)) return;
+  emit('detailsLoaded', details);
+  void loadActiveDamageRelations(details);
+});
+
+watch(language, async (nextLanguage) => {
+  if (nextLanguage !== 'de') {
+    pokemonCatalog.value = new Map();
+    return;
+  }
+
+  try {
+    pokemonCatalog.value = await loadGermanPokemonCatalog();
+  } catch (error) {
+    console.error('Failed to load German Pokémon form names:', error);
+  }
+});
+
+onBeforeUnmount(() => {
+  activeRequestId += 1;
+  activeDamageRequestId += 1;
+  clearActivePokemonForm(species.value || undefined);
+});
 </script>
 
 <style scoped>
@@ -949,6 +1084,37 @@ watch(
   height: 92%;
   object-fit: contain;
   image-rendering: pixelated;
+}
+
+.active-form-selector {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--legacy-border);
+  background: var(--legacy-page);
+}
+
+.active-form-selector label {
+  display: grid;
+  gap: 6px;
+  color: var(--legacy-muted);
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.active-form-selector select {
+  width: 100%;
+  min-height: 40px;
+  padding: 7px 9px;
+  border: 1px solid var(--legacy-border-strong);
+  border-radius: 4px;
+  color: var(--legacy-text);
+  background: var(--legacy-surface);
+}
+
+.active-form-selector small {
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.45;
 }
 
 .type-list,

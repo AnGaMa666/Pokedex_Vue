@@ -46,6 +46,7 @@
         <summary>{{ labels.disclaimerTitle }}</summary>
         <div class="legal-content">
           <p>{{ labels.disclaimerFan }}</p>
+          <p>{{ labels.disclaimerData }}</p>
           <p>{{ labels.disclaimerAccuracy }}</p>
           <p>{{ labels.disclaimerLinks }}</p>
         </div>
@@ -104,7 +105,8 @@ const labels = computed(() => language.value === 'de'
       rightsCode: 'Konzept, Benutzeroberfläche und Anwendungscode dieses unabhängigen Projekts werden von AnGaMa entwickelt. Der öffentliche Quellcode ist über das verlinkte GitHub-Repository einsehbar.',
       disclaimerTitle: 'Disclaimer / Haftungshinweis',
       disclaimerFan: 'Dies ist ein unabhängiges, nicht kommerziell bestätigtes Fanprojekt. Es besteht keine Verbindung, Beauftragung oder offizielle Partnerschaft mit Nintendo, GAME FREAK oder The Pokémon Company.',
-      disclaimerAccuracy: 'Fangchancen, Statuswerte, Entwicklungsbedingungen, Fundorte und Spielinformationen werden nach den verfügbaren Daten und den ausgewählten Spielmechaniken berechnet. Einzelne Editionen, Events oder Sondermechaniken können abweichen; eine Gewähr für Vollständigkeit und Fehlerfreiheit wird nicht übernommen.',
+      disclaimerData: 'Die dargestellten Spiel- und Pokédex-Daten stammen überwiegend aus PokéAPI. Angaben können je Spielversion abweichen; einzelne historische oder editionsspezifische Informationen können unvollständig sein.',
+      disclaimerAccuracy: 'Fangchancen, Statuswerte, Entwicklungsbedingungen, Fundorte und weitere berechnete Angaben beruhen auf den verfügbaren Daten und den ausgewählten Spielmechaniken. Eine Garantie für Vollständigkeit und Fehlerfreiheit wird nicht übernommen.',
       disclaimerLinks: 'Für Inhalte externer Websites sind ausschließlich deren Betreiber verantwortlich. Externe Links werden als solche geöffnet und dienen nur als weiterführende Quelle oder Profilverknüpfung.',
       contactTitle: 'Betreiber und Kontakt',
       contactText: 'Betreiber und Entwickler des Pokédex ist AnGaMa. Technische, inhaltliche und datenschutzbezogene Hinweise können über das GitHub-Profil oder den Twitch-Kanal AnGaMa666 übermittelt werden.',
@@ -130,7 +132,8 @@ const labels = computed(() => language.value === 'de'
       rightsCode: 'The concept, interface and application code of this independent project are developed by AnGaMa. The public source code is available through the linked GitHub repository.',
       disclaimerTitle: 'Disclaimer',
       disclaimerFan: 'This is an independent fan project without commercial endorsement. It is not connected with, commissioned by or officially partnered with Nintendo, GAME FREAK or The Pokémon Company.',
-      disclaimerAccuracy: 'Catch chances, stats, evolution conditions, locations and game information are calculated from the available data and selected mechanics. Individual games, events and special mechanics may differ; completeness and freedom from errors are not guaranteed.',
+      disclaimerData: 'The displayed game and Pokédex data is obtained primarily from PokéAPI. Details may differ between game versions, and some historical or version-specific information may be incomplete.',
+      disclaimerAccuracy: 'Catch chances, stats, evolution conditions, locations and other calculated information are based on the available data and selected mechanics. Completeness and freedom from errors are not guaranteed.',
       disclaimerLinks: 'External website operators are solely responsible for their content. External links open separately and are provided only as sources or profile references.',
       contactTitle: 'Operator and contact',
       contactText: 'The Pokédex is operated and developed by AnGaMa. Technical, content and privacy-related messages can be sent through the GitHub profile or Twitch channel AnGaMa666.',

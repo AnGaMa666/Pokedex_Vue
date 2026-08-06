@@ -206,6 +206,10 @@ export default {
     return getResourceList('item');
   },
 
+  getItemCategories() {
+    return getResourceList('item-category');
+  },
+
   getBerries() {
     return getResourceList('berry');
   },
@@ -265,6 +269,10 @@ export default {
     return getNamedResource('pokemon-species', nameOrId);
   },
 
+  getPokemonFormDetails(nameOrId) {
+    return getNamedResource('pokemon-form', nameOrId);
+  },
+
   getPokemonEncounters(nameOrId) {
     return cachedGet(`pokemon/${encodeURIComponent(nameOrId)}/encounters`);
   },
@@ -279,6 +287,10 @@ export default {
 
   getMoveLearnMethod(nameOrId) {
     return getNamedResource('move-learn-method', nameOrId);
+  },
+
+  getAbilityDetails(nameOrId) {
+    return getNamedResource('ability', nameOrId);
   },
 
   getItemDetails(nameOrId) {

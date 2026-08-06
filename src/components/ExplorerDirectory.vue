@@ -59,9 +59,7 @@
         <p>{{ labels.loadError }}</p>
         <button type="button" @click="loadResources">{{ labels.tryAgain }}</button>
       </div>
-      <p v-else-if="filteredResources.length === 0" class="status-message">
-        {{ labels.noMatches }}
-      </p>
+      <p v-else-if="filteredResources.length === 0" class="status-message">{{ labels.noMatches }}</p>
 
       <template v-else>
         <ul class="resource-list" :aria-busy="enrichingResources">
@@ -69,14 +67,11 @@
             <button
               type="button"
               class="resource-button"
-              :class="{
-                selected: selectedResource?.id === resource.id,
-                move: kind === 'moves',
-              }"
+              :class="{ selected: selectedResource?.id === resource.id, move: kind === 'moves' }"
               :style="getResourceStyle(resource)"
               @click="selectResource(resource)"
             >
-              <span v-if="kind !== 'moves'" class="resource-sprite" aria-hidden="true">
+              <span class="resource-sprite" aria-hidden="true">
                 <img
                   :src="getResourceSprite(resource)"
                   alt=""
@@ -86,21 +81,39 @@
                   @error="$event.currentTarget.hidden = true"
                 >
               </span>
-              <span v-else class="resource-number">#{{ formatResourceId(resource.id) }}</span>
 
               <span class="resource-copy">
+                <span v-if="kind === 'moves'" class="resource-number">#{{ formatResourceId(resource.id) }}</span>
                 <strong>{{ getResourceLabel(resource) }}</strong>
                 <small v-if="kind === 'moves' && getResourceType(resource)">
                   {{ getLocalizedTypeName(getResourceType(resource), language) }} ·
-                  {{ getDamageClassLabel(getResourceDamageClass(resource)) }}
+                  {{ getDamageClassLabel(getResourceDamageClass(resource)) }} ·
+                  {{ labels.accuracy }} {{ formatAccuracy(resource) }}
                 </small>
                 <template v-else>
-                  <small v-if="getResourceCategory(resource)">
-                    {{ getResourceCategory(resource) }}
+                  <small v-if="!getResourceDetails(resource)" class="resource-loading">
+                    {{ labels.detailsLoading }}
                   </small>
-                  <small class="purchase-price">
-                    {{ labels.purchasePrice }}: {{ formatResourceCost(resource) }}
-                  </small>
+                  <template v-else>
+                    <small v-if="getResourceCategory(resource)">
+                      {{ getResourceCategory(resource) }}
+                    </small>
+                    <span
+                      v-if="getResourcePriceSummaries(resource).length"
+                      class="compact-price-list"
+                    >
+                      <small
+                        v-for="summary in getResourcePriceSummaries(resource)"
+                        :key="summary.currency || 'unspecified-currency'"
+                        class="price-summary-line"
+                      >
+                        <span class="currency-name">{{ summary.currencyLabel }}</span>
+                        <span>{{ labels.purchasePrice }} {{ summary.purchaseLabel }}</span>
+                        <span>{{ labels.salePrice }} {{ summary.sellLabel }}</span>
+                      </small>
+                    </span>
+                    <small v-else class="price-summary-line">{{ labels.noPriceData }}</small>
+                  </template>
                 </template>
               </span>
 
@@ -110,13 +123,9 @@
         </ul>
 
         <nav v-if="pageCount > 1" class="pagination" :aria-label="labels.pages">
-          <button type="button" :disabled="page === 1" @click="page -= 1">
-            {{ labels.previous }}
-          </button>
+          <button type="button" :disabled="page === 1" @click="page -= 1">{{ labels.previous }}</button>
           <span>{{ labels.page }} {{ page }} / {{ pageCount }}</span>
-          <button type="button" :disabled="page === pageCount" @click="page += 1">
-            {{ labels.next }}
-          </button>
+          <button type="button" :disabled="page === pageCount" @click="page += 1">{{ labels.next }}</button>
         </nav>
       </template>
     </aside>
@@ -154,13 +163,18 @@ import {
   getLocalizedTypeName,
   getTypeTextColor,
 } from '@/utils/localization';
+import { getLocalizedItemMetadataName } from '@/utils/itemDetails';
+import {
+  createCompactItemPriceSummaries,
+  getCompactItemPriceSummary,
+} from '@/utils/itemPrices';
 import {
   formatResourceId,
-  formatResourceName,
   getLocalizedName,
   getResourceId,
 } from '@/utils/resource';
 import { getTypeColor } from '@/utils/typeColors';
+import { getTypeIconDataUri } from '@/utils/typeIcons';
 import BerryDetails from './BerryDetails.vue';
 import ItemDetails from './ItemDetails.vue';
 import MoveDetails from './MoveDetails.vue';
@@ -171,27 +185,21 @@ const props = defineProps({
     required: true,
     validator: (value) => ['moves', 'items', 'berries', 'balls', 'special-items'].includes(value),
   },
-  searchQuery: {
-    type: String,
-    default: '',
-  },
-  requestedResource: {
-    type: String,
-    default: '',
-  },
+  searchQuery: { type: String, default: '' },
+  requestedResource: { type: String, default: '' },
 });
 
 const { language } = useI18n();
 const PAGE_SIZE = 50;
 const MAX_PARALLEL_REQUESTS = 8;
 const MAIN_TYPES = [
-  'normal', 'fire', 'water', 'electric', 'grass', 'ice',
-  'fighting', 'poison', 'ground', 'flying', 'psychic', 'bug',
-  'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
+  'normal', 'fire', 'water', 'electric', 'grass', 'ice', 'fighting', 'poison',
+  'ground', 'flying', 'psychic', 'bug', 'rock', 'ghost', 'dragon', 'dark', 'steel', 'fairy',
 ];
 
 const resources = ref([]);
 const resourceDetailsByName = ref({});
+const categoryDetailsByName = ref({});
 const selectedResource = ref(null);
 const detailPanel = ref(null);
 const loading = ref(false);
@@ -206,57 +214,29 @@ const sortMode = ref('number');
 const page = ref(1);
 let activeEnrichmentId = 0;
 let activeFilterId = 0;
+const categoryRequestsByName = new Map();
 
 const labels = computed(() => language.value === 'de'
   ? {
-      damageClass: 'Schadensart',
-      type: 'Typ',
-      sort: 'Sortierung',
-      all: 'Alle',
-      physical: 'Physisch',
-      special: 'Spezial',
-      status: 'Status',
-      number: 'Nummer',
-      name: 'Name A–Z',
-      category: 'Kategorie',
-      purchasePrice: 'Einkaufspreis',
-      notPurchasable: 'Nicht käuflich',
-      priceAscending: 'Einkaufspreis aufsteigend',
-      priceDescending: 'Einkaufspreis absteigend',
-      loading: 'Verzeichnis wird geladen…',
-      loadError: 'Das Verzeichnis konnte nicht geladen werden.',
-      tryAgain: 'Erneut versuchen',
-      noMatches: 'Keine Einträge entsprechen der Suche und den Filtern.',
-      choose: 'Bitte auswählen:',
-      pages: 'Verzeichnisseiten',
-      previous: 'Zurück',
-      next: 'Weiter',
-      page: 'Seite',
+      damageClass: 'Schadensart', type: 'Typ', sort: 'Sortierung', all: 'Alle',
+      physical: 'Physisch', special: 'Spezial', status: 'Status', number: 'Nummer',
+      name: 'Name A–Z', category: 'Kategorie', purchasePrice: 'Einkaufspreis',
+      salePrice: 'Verkaufspreis', noPriceData: 'Keine Preisdaten',
+      detailsLoading: 'Details werden geladen…', priceAscending: 'Einkaufspreis aufsteigend',
+      priceDescending: 'Einkaufspreis absteigend', accuracy: 'Genauigkeit',
+      loading: 'Verzeichnis wird geladen…', loadError: 'Das Verzeichnis konnte nicht geladen werden.',
+      tryAgain: 'Erneut versuchen', noMatches: 'Keine Einträge entsprechen der Suche und den Filtern.',
+      choose: 'Bitte auswählen:', pages: 'Verzeichnisseiten', previous: 'Zurück', next: 'Weiter', page: 'Seite',
     }
   : {
-      damageClass: 'Damage class',
-      type: 'Type',
-      sort: 'Sort',
-      all: 'All',
-      physical: 'Physical',
-      special: 'Special',
-      status: 'Status',
-      number: 'Number',
-      name: 'Name A–Z',
-      category: 'Category',
-      purchasePrice: 'Purchase price',
-      notPurchasable: 'Not purchasable',
-      priceAscending: 'Purchase price ascending',
-      priceDescending: 'Purchase price descending',
-      loading: 'Loading directory…',
-      loadError: 'The directory could not be loaded.',
-      tryAgain: 'Try again',
-      noMatches: 'No entries match the search and filters.',
-      choose: 'Select:',
-      pages: 'Directory pages',
-      previous: 'Previous',
-      next: 'Next',
-      page: 'Page',
+      damageClass: 'Damage class', type: 'Type', sort: 'Sort', all: 'All', physical: 'Physical',
+      special: 'Special', status: 'Status', number: 'Number', name: 'Name A–Z', category: 'Category',
+      purchasePrice: 'Purchase price', salePrice: 'Sale price', noPriceData: 'No price data',
+      detailsLoading: 'Loading details…',
+      priceAscending: 'Purchase price ascending', priceDescending: 'Purchase price descending',
+      accuracy: 'Accuracy', loading: 'Loading directory…', loadError: 'The directory could not be loaded.',
+      tryAgain: 'Try again', noMatches: 'No entries match the search and filters.', choose: 'Select:',
+      pages: 'Directory pages', previous: 'Previous', next: 'Next', page: 'Page',
     });
 
 const configs = computed(() => ({
@@ -265,121 +245,119 @@ const configs = computed(() => ({
     singular: language.value === 'de' ? 'Attacke' : 'move',
     kicker: language.value === 'de' ? 'Kampftechniken' : 'Battle techniques',
     description: language.value === 'de'
-      ? 'Attacken können nach Typ und Schadensart gefiltert und unabhängig von ihrer Nummer sortiert werden.'
-      : 'Moves can be filtered by type and damage class and sorted without changing their IDs.',
+      ? 'Attacken mit Typ, Schadensart, Genauigkeit und vollständiger Detailansicht.'
+      : 'Moves with type, damage class, accuracy and a complete detail view.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt Kampfwerte, Ziel, Effekt und Spieltexte.'
-      : 'The detail view shows battle values, target, effect and game text.',
-    symbol: '⚡',
-    listMethod: () => PokeAPI.getMoves(),
-    detailMethod: (name) => PokeAPI.getMoveDetails(name),
-    detailComponent: MoveDetails,
+      ? 'Die Detailansicht zeigt Kampfwerte, Ziel, Effekt und alle erlernenden Pokémon.'
+      : 'The detail view shows battle values, target, effect and every Pokémon that can learn it.',
+    symbol: '⚡', listMethod: () => PokeAPI.getMoves(), detailMethod: (name) => PokeAPI.getMoveDetails(name), detailComponent: MoveDetails,
   },
   items: {
-    title: 'Items',
-    singular: language.value === 'de' ? 'Item' : 'item',
+    title: 'Items', singular: language.value === 'de' ? 'Item' : 'item',
     kicker: language.value === 'de' ? 'Beutel- und Trageitems' : 'Bag and held items',
     description: language.value === 'de'
-      ? 'Pokébälle, Beeren, Maschinen und einzigartige Spezialitems sind aus diesem allgemeinen Verzeichnis entfernt. Einkaufspreise stehen direkt in der Liste.'
-      : 'Poké Balls, berries, machines and unique special items are removed from this general directory. Purchase prices are shown directly in the list.',
+      ? 'Reguläre Items ohne Beeren, Pokébälle, Maschinen und einzigartige Spezialitems. Kategorien sowie aktuelle Einkaufspreise sind übersetzt.'
+      : 'Regular items without berries, Poké Balls, machines and unique special items. Categories and current prices are shown.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt Sprite, Einkaufspreis, Kategorie, Effekt, Spiele und wilde Träger.'
-      : 'The detail view shows sprite, purchase price, category, effect, games and wild holders.',
-    symbol: '◆',
-    listMethod: () => PokeAPI.getStandardItems(),
-    detailMethod: (name) => PokeAPI.getItemDetails(name),
-    detailComponent: ItemDetails,
+      ? 'Die Detailansicht zeigt Kauf- und Verkaufspreise nach Generation, Effekt, Spiele und wilde Träger.'
+      : 'The detail view shows purchase and sale prices by generation, effect, games and wild holders.',
+    symbol: '◆', listMethod: () => PokeAPI.getStandardItems(), detailMethod: (name) => PokeAPI.getItemDetails(name), detailComponent: ItemDetails,
   },
   berries: {
-    title: language.value === 'de' ? 'Beeren' : 'Berries',
-    singular: language.value === 'de' ? 'Beere' : 'berry',
+    title: language.value === 'de' ? 'Beeren' : 'Berries', singular: language.value === 'de' ? 'Beere' : 'berry',
     kicker: language.value === 'de' ? 'Wachstum und Aromen' : 'Growth and flavors',
     description: language.value === 'de'
-      ? 'Beeren bleiben als eigene Kategorie mit Wachstum, Ernte, Aromawerten und verfügbaren Einkaufspreisen erhalten.'
-      : 'Berries remain a dedicated category with growth, harvest, flavor values and available purchase prices.',
+      ? 'Beeren mit Wachstum, Aromen sowie Kauf- und Verkaufspreisen nach Spielgruppe.'
+      : 'Berries with growth, flavors and purchase and sale prices by game group.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt Wachstumszeit, Ertrag, Härte und Natur-Kraft-Werte.'
-      : 'The detail view shows growth time, yield, firmness and Natural Gift values.',
-    symbol: '●',
-    listMethod: () => PokeAPI.getBerries(),
-    detailMethod: (name) => PokeAPI.getItemDetails(`${name}-berry`),
-    detailComponent: BerryDetails,
+      ? 'Die Detailansicht zeigt Preise, Wachstumszeit, Ertrag, Härte und Beerenkräfte.'
+      : 'The detail view shows prices, growth time, yield, firmness and Natural Gift values.',
+    symbol: '●', listMethod: () => PokeAPI.getBerries(), detailMethod: (name) => PokeAPI.getItemDetails(`${name}-berry`), detailComponent: BerryDetails,
   },
   balls: {
-    title: language.value === 'de' ? 'Pokébälle' : 'Poké Balls',
-    singular: language.value === 'de' ? 'Pokéball' : 'Poké Ball',
+    title: language.value === 'de' ? 'Pokébälle' : 'Poké Balls', singular: language.value === 'de' ? 'Pokéball' : 'Poké Ball',
     kicker: language.value === 'de' ? 'Fangitems' : 'Capture items',
     description: language.value === 'de'
-      ? 'Alle Pokéball-Kategorien werden zusammengeführt. Sprite und Einkaufspreis werden direkt angezeigt.'
-      : 'All Poké Ball categories are combined. Sprite and purchase price are shown directly.',
+      ? 'Alle Pokéball-Kategorien mit übersetzten Kategorien und generationenspezifischen Preisen.'
+      : 'All Poké Ball categories with translated categories and generation-specific prices.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt Einkaufspreis, Effekt, Spielauftritte und weitere Itemdaten.'
-      : 'The detail view shows purchase price, effect, game appearances and further item data.',
-    symbol: '◉',
-    listMethod: () => PokeAPI.getBallItems(),
-    detailMethod: (name) => PokeAPI.getItemDetails(name),
-    detailComponent: ItemDetails,
+      ? 'Die Detailansicht zeigt Kauf- und Verkaufspreise, Effekt und Spielauftritte.'
+      : 'The detail view shows purchase and sale prices, effect and game appearances.',
+    symbol: '◉', listMethod: () => PokeAPI.getBallItems(), detailMethod: (name) => PokeAPI.getItemDetails(name), detailComponent: ItemDetails,
   },
   'special-items': {
-    title: language.value === 'de' ? 'Einzigartige Items' : 'Unique items',
-    singular: language.value === 'de' ? 'Spezialitem' : 'special item',
+    title: language.value === 'de' ? 'Einzigartige Items' : 'Unique items', singular: language.value === 'de' ? 'Spezialitem' : 'special item',
     kicker: language.value === 'de' ? 'Mega-, Z- und Storyitems' : 'Mega, Z and story items',
     description: language.value === 'de'
-      ? 'Mega-Steine, Z-Kristalle, artspezifische, Story- und weitere einzigartige Items werden getrennt gesammelt. Verfügbare Einkaufspreise stehen in der Liste.'
-      : 'Mega Stones, Z-Crystals, species-specific, story and other unique items are collected separately. Available purchase prices are shown in the list.',
+      ? 'Mega-Steine, Z-Kristalle, artspezifische, Story- und weitere einzigartige Items mit übersetzten Kategorien und Preisen.'
+      : 'Mega Stones, Z-Crystals, species-specific, story and other unique items with translated categories and prices.',
     emptyDescription: language.value === 'de'
-      ? 'Die Detailansicht zeigt das offizielle Sprite, den Einkaufspreis und alle verfügbaren PokéAPI-Daten.'
-      : 'The detail view shows the official sprite, purchase price and all available PokéAPI data.',
-    symbol: '✦',
-    listMethod: () => PokeAPI.getSpecialItems(),
-    detailMethod: (name) => PokeAPI.getItemDetails(name),
-    detailComponent: ItemDetails,
+      ? 'Die Detailansicht zeigt Sprite, Beschreibung, Kauf- und Verkaufspreise sowie Spielauftritte.'
+      : 'The detail view shows the sprite, description, purchase and sale prices and game appearances.',
+    symbol: '✦', listMethod: () => PokeAPI.getSpecialItems(), detailMethod: (name) => PokeAPI.getItemDetails(name), detailComponent: ItemDetails,
   },
 }));
 
 const config = computed(() => configs.value[props.kind]);
 const typeOptions = MAIN_TYPES;
 const getResourceDetails = (resource) => resourceDetailsByName.value[resource.name] || null;
-const getResourceLabel = (resource) => getLocalizedName(
-  getResourceDetails(resource)?.names,
-  resource.name,
-  language.value,
-);
+const getResourceLabel = (resource) => getLocalizedName(getResourceDetails(resource)?.names, resource.name, language.value);
 const getResourceType = (resource) => getResourceDetails(resource)?.type?.name || '';
 const getResourceDamageClass = (resource) => getResourceDetails(resource)?.damage_class?.name || '';
-const getDamageClassLabel = (damageClass) => getLocalizedDamageClassName(
-  damageClass,
+const getDamageClassLabel = (damageClass) => getLocalizedDamageClassName(damageClass, language.value);
+const getResourceCategory = (resource) => {
+  const details = getResourceDetails(resource);
+  const categoryName = details?.category?.name;
+  if (!categoryName) return '';
+  return getLocalizedItemMetadataName({
+    details: categoryDetailsByName.value[categoryName],
+    fallback: categoryName,
+    language: language.value,
+    kind: 'category',
+  });
+};
+const getResourcePriceSummaries = (resource) => createCompactItemPriceSummaries(
+  getResourceDetails(resource) || {},
   language.value,
 );
-const getResourceCategory = (resource) => {
-  const category = getResourceDetails(resource)?.category?.name;
-  return category ? formatResourceName(category) : '';
-};
-const getResourceCost = (resource) => Number(getResourceDetails(resource)?.cost) || 0;
-const formatResourceCost = (resource) => {
-  const cost = getResourceCost(resource);
-
-  if (cost <= 0) {
-    return labels.value.notPurchasable;
-  }
-
-  return `${new Intl.NumberFormat(language.value === 'de' ? 'de-DE' : 'en-US').format(cost)} ₽`;
+const getResourceCost = (resource) => getCompactItemPriceSummary(
+  getResourceDetails(resource) || {},
+  language.value,
+)?.purchaseAmount ?? null;
+const formatAccuracy = (resource) => {
+  const accuracy = getResourceDetails(resource)?.accuracy;
+  return accuracy === null || accuracy === undefined ? '—' : `${accuracy}%`;
 };
 const getResourceSprite = (resource) => {
   const details = getResourceDetails(resource);
+  if (props.kind === 'moves') return getTypeIconDataUri(details?.type?.name || 'normal');
   return details?.sprites?.default
     || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/${props.kind === 'berries' ? `${resource.name}-berry` : resource.name}.png`;
 };
-const getResourceStyle = (resource) => {
-  if (props.kind !== 'moves') {
-    return {};
+const getResourceStyle = (resource) => props.kind === 'moves'
+  ? { '--move-color': getTypeColor(getResourceType(resource)), '--move-text': getTypeTextColor(getResourceType(resource)) }
+  : {};
+
+const loadCategoryDetails = async (categoryName, enrichmentId) => {
+  if (!categoryName || categoryDetailsByName.value[categoryName]) return;
+
+  if (!categoryRequestsByName.has(categoryName)) {
+    categoryRequestsByName.set(categoryName, PokeAPI.getItemCategory(categoryName)
+      .then((response) => response.data)
+      .catch((error) => {
+        console.error(`Failed to load item category ${categoryName}:`, error);
+        return null;
+      })
+      .finally(() => categoryRequestsByName.delete(categoryName)));
   }
 
-  const type = getResourceType(resource);
-  return {
-    '--move-color': getTypeColor(type),
-    '--move-text': getTypeTextColor(type),
-  };
+  const categoryDetails = await categoryRequestsByName.get(categoryName);
+  if (categoryDetails && enrichmentId === activeEnrichmentId) {
+    categoryDetailsByName.value = {
+      ...categoryDetailsByName.value,
+      [categoryName]: categoryDetails,
+    };
+  }
 };
 
 const filteredResources = computed(() => {
@@ -389,174 +367,89 @@ const filteredResources = computed(() => {
       || resource.name.includes(query)
       || getResourceLabel(resource).toLocaleLowerCase(language.value).includes(query)
       || String(resource.id).includes(query);
-    const matchesDamageClass = !selectedDamageClass.value
-      || allowedDamageClassNames.value?.has(resource.name);
+    const matchesDamageClass = !selectedDamageClass.value || allowedDamageClassNames.value?.has(resource.name);
     const matchesType = !selectedType.value || allowedTypeNames.value?.has(resource.name);
     return matchesQuery && matchesDamageClass && matchesType;
   });
 
-  entries = [...entries].sort((firstResource, secondResource) => {
-    if (sortMode.value === 'name') {
-      return getResourceLabel(firstResource).localeCompare(
-        getResourceLabel(secondResource),
-        language.value,
-      );
-    }
-
-    if (sortMode.value === 'type') {
-      return getLocalizedTypeName(getResourceType(firstResource), language.value).localeCompare(
-        getLocalizedTypeName(getResourceType(secondResource), language.value),
-        language.value,
-      ) || firstResource.id - secondResource.id;
-    }
-
-    if (sortMode.value === 'damage-class') {
-      return getResourceDamageClass(firstResource).localeCompare(
-        getResourceDamageClass(secondResource),
-      ) || firstResource.id - secondResource.id;
-    }
-
-    if (sortMode.value === 'category') {
-      return getResourceCategory(firstResource).localeCompare(
-        getResourceCategory(secondResource),
-        language.value,
-      ) || firstResource.id - secondResource.id;
-    }
-
+  entries = [...entries].sort((first, second) => {
+    if (sortMode.value === 'name') return getResourceLabel(first).localeCompare(getResourceLabel(second), language.value);
+    if (sortMode.value === 'type') return getLocalizedTypeName(getResourceType(first), language.value).localeCompare(getLocalizedTypeName(getResourceType(second), language.value), language.value) || first.id - second.id;
+    if (sortMode.value === 'damage-class') return getResourceDamageClass(first).localeCompare(getResourceDamageClass(second)) || first.id - second.id;
+    if (sortMode.value === 'category') return getResourceCategory(first).localeCompare(getResourceCategory(second), language.value) || first.id - second.id;
     if (sortMode.value === 'price-asc') {
-      const firstCost = getResourceCost(firstResource) || Number.MAX_SAFE_INTEGER;
-      const secondCost = getResourceCost(secondResource) || Number.MAX_SAFE_INTEGER;
-      return firstCost - secondCost || firstResource.id - secondResource.id;
+      const firstCost = getResourceCost(first) ?? Number.MAX_SAFE_INTEGER;
+      const secondCost = getResourceCost(second) ?? Number.MAX_SAFE_INTEGER;
+      return firstCost - secondCost || first.id - second.id;
     }
-
-    if (sortMode.value === 'price-desc') {
-      return getResourceCost(secondResource) - getResourceCost(firstResource)
-        || firstResource.id - secondResource.id;
-    }
-
-    return firstResource.id - secondResource.id;
+    if (sortMode.value === 'price-desc') return (getResourceCost(second) ?? -1) - (getResourceCost(first) ?? -1) || first.id - second.id;
+    return first.id - second.id;
   });
-
   return entries;
 });
 const pageCount = computed(() => Math.max(1, Math.ceil(filteredResources.value.length / PAGE_SIZE)));
-const pagedResources = computed(() => {
-  const start = (page.value - 1) * PAGE_SIZE;
-  return filteredResources.value.slice(start, start + PAGE_SIZE);
-});
+const pagedResources = computed(() => filteredResources.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE));
 
 const enrichResources = async () => {
   const enrichmentId = ++activeEnrichmentId;
   const missing = pagedResources.value.filter((resource) => !getResourceDetails(resource));
-
-  if (!missing.length) {
-    enrichingResources.value = false;
-    return;
-  }
-
+  if (!missing.length) { enrichingResources.value = false; return; }
   enrichingResources.value = true;
   let nextIndex = 0;
 
   const worker = async () => {
     while (nextIndex < missing.length) {
-      const index = nextIndex;
+      const resource = missing[nextIndex];
       nextIndex += 1;
-      const resource = missing[index];
-
       try {
         const response = await config.value.detailMethod(resource.name);
-
-        if (enrichmentId !== activeEnrichmentId) {
-          return;
-        }
-
-        resourceDetailsByName.value = {
-          ...resourceDetailsByName.value,
-          [resource.name]: response.data,
-        };
-      } catch (requestError) {
-        console.error(`Failed to enrich ${props.kind} ${resource.name}:`, requestError);
+        if (enrichmentId !== activeEnrichmentId) return;
+        resourceDetailsByName.value = { ...resourceDetailsByName.value, [resource.name]: response.data };
+        const categoryName = response.data.category?.name;
+        await loadCategoryDetails(categoryName, enrichmentId);
+      } catch (error) {
+        console.error(`Failed to enrich ${props.kind} ${resource.name}:`, error);
       }
     }
   };
-
-  const workers = Math.min(MAX_PARALLEL_REQUESTS, missing.length);
-  await Promise.all(Array.from({ length: workers }, worker));
-
-  if (enrichmentId === activeEnrichmentId) {
-    enrichingResources.value = false;
-  }
+  await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_REQUESTS, missing.length) }, worker));
+  if (enrichmentId === activeEnrichmentId) enrichingResources.value = false;
 };
 
 const loadMoveFilter = async () => {
   const filterId = ++activeFilterId;
   allowedDamageClassNames.value = null;
   allowedTypeNames.value = null;
-
-  if (props.kind !== 'moves') {
-    return;
-  }
-
+  if (props.kind !== 'moves') return;
   loadingFilter.value = true;
-
   try {
     const [damageResult, typeResult] = await Promise.all([
-      selectedDamageClass.value
-        ? PokeAPI.getMoveDamageClass(selectedDamageClass.value)
-        : Promise.resolve(null),
-      selectedType.value
-        ? PokeAPI.getTypeDetails(selectedType.value)
-        : Promise.resolve(null),
+      selectedDamageClass.value ? PokeAPI.getMoveDamageClass(selectedDamageClass.value) : Promise.resolve(null),
+      selectedType.value ? PokeAPI.getTypeDetails(selectedType.value) : Promise.resolve(null),
     ]);
-
-    if (filterId !== activeFilterId) {
-      return;
-    }
-
-    allowedDamageClassNames.value = damageResult
-      ? new Set((damageResult.data.moves || []).map((move) => move.name))
-      : null;
-    allowedTypeNames.value = typeResult
-      ? new Set((typeResult.data.moves || []).map((move) => move.name))
-      : null;
-  } catch (requestError) {
-    console.error('Failed to load move directory filters:', requestError);
+    if (filterId !== activeFilterId) return;
+    allowedDamageClassNames.value = damageResult ? new Set((damageResult.data.moves || []).map((move) => move.name)) : null;
+    allowedTypeNames.value = typeResult ? new Set((typeResult.data.moves || []).map((move) => move.name)) : null;
+  } catch (error) {
+    console.error('Failed to load move directory filters:', error);
   } finally {
-    if (filterId === activeFilterId) {
-      loadingFilter.value = false;
-    }
+    if (filterId === activeFilterId) loadingFilter.value = false;
   }
 };
 
 const scrollToDetails = async () => {
   await nextTick();
-
   if (window.matchMedia('(max-width: 760px)').matches) {
     detailPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     detailPanel.value?.focus({ preventScroll: true });
   }
 };
-
-const selectResource = async (resource) => {
-  selectedResource.value = resource;
-  await scrollToDetails();
-};
-
+const selectResource = async (resource) => { selectedResource.value = resource; await scrollToDetails(); };
 const openRequestedResource = async () => {
   const requested = props.requestedResource.trim().toLowerCase();
-
-  if (!requested || !resources.value.length) {
-    return;
-  }
-
-  const index = resources.value.findIndex((resource) => {
-    return resource.name === requested || String(resource.id) === requested;
-  });
-
-  if (index < 0) {
-    return;
-  }
-
+  if (!requested || !resources.value.length) return;
+  const index = resources.value.findIndex((resource) => resource.name === requested || String(resource.id) === requested);
+  if (index < 0) return;
   page.value = Math.floor(index / PAGE_SIZE) + 1;
   await nextTick();
   selectedResource.value = resources.value[index];
@@ -570,369 +463,75 @@ const loadResources = async () => {
   resources.value = [];
   selectedResource.value = null;
   resourceDetailsByName.value = {};
+  categoryDetailsByName.value = {};
   page.value = 1;
-
   try {
     const response = await config.value.listMethod();
+    categoryDetailsByName.value = Object.fromEntries((response.data.categories || [])
+      .filter((category) => category?.name)
+      .map((category) => [category.name, category]));
     resources.value = response.data.results
-      .map((resource) => ({
-        ...resource,
-        id: getResourceId(resource.url),
-      }))
+      .map((resource) => ({ ...resource, id: getResourceId(resource.url) }))
       .filter((resource) => resource.id !== null)
-      .sort((firstResource, secondResource) => firstResource.id - secondResource.id);
+      .sort((first, second) => first.id - second.id);
     await openRequestedResource();
     void enrichResources();
-  } catch (requestError) {
-    console.error(`Failed to load ${props.kind} directory:`, requestError);
+  } catch (error) {
+    console.error(`Failed to load ${props.kind} directory:`, error);
     hasError.value = true;
   } finally {
     loading.value = false;
   }
 };
 
-watch([selectedDamageClass, selectedType], () => {
-  page.value = 1;
-  void loadMoveFilter();
-});
-
-watch(sortMode, () => {
-  page.value = 1;
-});
-
-watch(
-  () => props.searchQuery,
-  () => {
-    page.value = 1;
-  },
-);
-
-watch(
-  () => props.requestedResource,
-  () => {
-    void openRequestedResource();
-  },
-);
-
-watch(
-  () => `${props.kind}:${page.value}:${pagedResources.value.map((resource) => resource.name).join('|')}`,
-  () => {
-    void enrichResources();
-  },
-);
-
-watch(pageCount, (count) => {
-  if (page.value > count) {
-    page.value = count;
-  }
-});
-
+watch([selectedDamageClass, selectedType], () => { page.value = 1; void loadMoveFilter(); });
+watch([sortMode, () => props.searchQuery], () => { page.value = 1; });
+watch(() => props.requestedResource, () => { void openRequestedResource(); });
+watch(() => `${props.kind}:${page.value}:${pagedResources.value.map((resource) => resource.name).join('|')}`, () => { void enrichResources(); });
+watch(pageCount, (count) => { if (page.value > count) page.value = count; });
 onMounted(loadResources);
 </script>
 
 <style scoped>
-.directory-layout {
-  display: grid;
-  grid-template-columns: minmax(330px, 430px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.directory-panel {
-  position: sticky;
-  top: 86px;
-  max-height: calc(100vh - 104px);
-  overflow: hidden;
-  border: 1px solid var(--legacy-border);
-  border-radius: 4px;
-  background: var(--legacy-surface);
-  box-shadow: 0 2px 5px var(--legacy-shadow);
-}
-
-.directory-heading {
-  display: flex;
-  gap: 14px;
-  justify-content: space-between;
-  align-items: end;
-  padding: 16px 14px 10px;
-  background: var(--legacy-page);
-}
-
-.directory-heading p {
-  margin: 0 0 4px;
-  color: var(--legacy-muted);
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.directory-heading h1 {
-  margin: 0;
-  color: var(--legacy-text);
-  font-size: 1.35rem;
-}
-
-.directory-heading > span {
-  color: var(--legacy-muted);
-  font-size: 0.72rem;
-}
-
-.directory-description {
-  margin: 0;
-  padding: 0 14px 12px;
-  border-bottom: 1px solid var(--legacy-border);
-  color: var(--legacy-muted);
-  font-size: 0.76rem;
-  line-height: 1.5;
-  background: var(--legacy-page);
-}
-
-.directory-filters {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  padding: 9px;
-  border-bottom: 1px solid var(--legacy-border);
-}
-
-.directory-filters.compact {
-  grid-template-columns: 1fr;
-}
-
-.directory-filters label {
-  display: grid;
-  gap: 3px;
-  color: var(--legacy-muted);
-  font-size: 0.62rem;
-  font-weight: 850;
-}
-
-.directory-filters label:last-child {
-  grid-column: 1 / -1;
-}
-
-.directory-filters select {
-  width: 100%;
-  min-width: 0;
-  min-height: 33px;
-  padding: 5px 7px;
-  border: 1px solid var(--legacy-border);
-  border-radius: 4px;
-  color: var(--legacy-text);
-  background: var(--legacy-page);
-  font-size: 0.72rem;
-}
-
-.status-message,
-.error-message {
-  margin: 0;
-  padding: 20px 14px;
-  color: var(--legacy-muted);
-}
-
-.error-message {
-  color: #b91c1c;
-}
-
-.error-message button {
-  margin-top: 7px;
-  padding: 7px 10px;
-  border: 1px solid #b91c1c;
-  border-radius: 4px;
-  color: #b91c1c;
-  background: var(--legacy-page);
-}
-
-.resource-list {
-  max-height: calc(100vh - 330px);
-  padding: 6px;
-  margin: 0;
-  overflow-y: auto;
-  list-style: none;
-}
-
-.resource-button {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  gap: 9px;
-  align-items: center;
-  width: 100%;
-  min-height: 70px;
-  padding: 5px 8px 5px 5px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--legacy-text);
-  text-align: left;
-  cursor: pointer;
-  background: transparent;
-}
-
-.resource-button.move {
-  min-height: 54px;
-  color: var(--move-text);
-  background: var(--move-color);
-}
-
-.resource-button:hover {
-  border-color: var(--legacy-border-strong);
-  filter: brightness(0.97);
-}
-
-.resource-button.selected {
-  border-color: var(--legacy-border-strong);
-  box-shadow: inset 4px 0 0 #888888;
-}
-
-.resource-sprite {
-  display: grid;
-  width: 56px;
-  height: 56px;
-  place-items: center;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.resource-sprite img {
-  width: 52px;
-  height: 52px;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-
-.resource-number {
-  color: inherit;
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.resource-copy {
-  display: grid;
-  min-width: 0;
-}
-
-.resource-copy strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.resource-copy small {
-  margin-top: 3px;
-  overflow: hidden;
-  color: inherit;
-  font-size: 0.66rem;
-  opacity: 0.78;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.resource-copy .purchase-price {
-  color: var(--legacy-text);
-  font-weight: 800;
-  opacity: 0.9;
-}
-
-.resource-arrow {
-  color: inherit;
-  font-size: 1.35rem;
-  opacity: 0.68;
-}
-
-.pagination {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px;
-  align-items: center;
-  padding: 8px;
-  border-top: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.pagination button {
-  min-height: 32px;
-  padding: 5px 9px;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  background: var(--legacy-surface);
-}
-
-.pagination button:disabled {
-  opacity: 0.45;
-}
-
-.pagination span {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-  text-align: center;
-}
-
-.detail-panel {
-  min-width: 0;
-  scroll-margin-top: 100px;
-  outline: none;
-}
-
-.empty-detail {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  min-height: 300px;
-  padding: 28px;
-  border: 1px dashed var(--legacy-border-strong);
-  color: var(--legacy-muted);
-  background: var(--legacy-surface);
-}
-
-.empty-symbol {
-  display: grid;
-  flex: 0 0 auto;
-  width: 72px;
-  height: 72px;
-  place-items: center;
-  border: 1px solid var(--legacy-border);
-  color: var(--legacy-text);
-  font-size: 1.7rem;
-  background: var(--legacy-page);
-}
-
-.empty-detail h2 {
-  margin: 0;
-  color: var(--legacy-text);
-}
-
-.empty-detail p {
-  margin: 7px 0 0;
-  line-height: 1.5;
-}
-
-@media (max-width: 900px) {
-  .directory-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .directory-panel {
-    position: static;
-    max-height: none;
-  }
-
-  .resource-list {
-    max-height: 520px;
-  }
-}
-
-@media (max-width: 460px) {
-  .directory-filters {
-    grid-template-columns: 1fr;
-  }
-
-  .directory-filters label:last-child {
-    grid-column: auto;
-  }
-
-  .empty-detail {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
+.directory-layout { display: grid; grid-template-columns: minmax(330px, 430px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.directory-panel { position: sticky; top: 86px; max-height: calc(100vh - 104px); overflow: hidden; border: 1px solid var(--legacy-border); border-radius: 4px; background: var(--legacy-surface); box-shadow: 0 2px 5px var(--legacy-shadow); }
+.directory-heading { display: flex; gap: 14px; justify-content: space-between; align-items: end; padding: 16px 14px 10px; background: var(--legacy-page); }
+.directory-heading p { margin: 0 0 4px; color: var(--legacy-muted); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+.directory-heading h1 { margin: 0; font-size: 1.35rem; }
+.directory-heading > span { color: var(--legacy-muted); font-size: 0.72rem; }
+.directory-description { margin: 0; padding: 0 14px 12px; border-bottom: 1px solid var(--legacy-border); color: var(--legacy-muted); font-size: 0.76rem; line-height: 1.5; background: var(--legacy-page); }
+.directory-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; padding: 9px; border-bottom: 1px solid var(--legacy-border); }
+.directory-filters.compact { grid-template-columns: 1fr; }
+.directory-filters label { display: grid; gap: 3px; color: var(--legacy-muted); font-size: 0.62rem; font-weight: 850; }
+.directory-filters label:last-child { grid-column: 1 / -1; }
+.directory-filters select { width: 100%; min-width: 0; min-height: 33px; padding: 5px 7px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); }
+.status-message, .error-message { margin: 0; padding: 20px 14px; color: var(--legacy-muted); }
+.error-message { color: #ef4444; }
+.error-message button { margin-top: 7px; padding: 7px 10px; border: 1px solid #ef4444; color: #ef4444; background: var(--legacy-page); }
+.resource-list { max-height: calc(100vh - 330px); padding: 6px; margin: 0; overflow-y: auto; list-style: none; }
+.resource-button { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 9px; align-items: center; width: 100%; min-height: 76px; padding: 6px; border: 1px solid transparent; color: var(--legacy-text); text-align: left; background: transparent; }
+.resource-button:hover, .resource-button.selected { border-color: var(--legacy-border-strong); background: var(--legacy-surface-active); }
+.resource-button.selected { box-shadow: inset 4px 0 0 #888; }
+.resource-sprite { display: grid; width: 56px; height: 56px; place-items: center; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.resource-sprite img { width: 52px; height: 52px; object-fit: contain; image-rendering: pixelated; }
+.resource-copy { display: grid; min-width: 0; gap: 2px; }
+.resource-copy strong { overflow: hidden; font-size: 0.86rem; text-overflow: ellipsis; white-space: nowrap; }
+.resource-copy small, .resource-number { overflow: hidden; color: var(--legacy-muted); font-size: 0.64rem; text-overflow: ellipsis; white-space: nowrap; }
+.resource-loading { color: var(--legacy-muted); font-style: italic; }
+.compact-price-list { display: grid; gap: 2px; min-width: 0; }
+.price-summary-line { display: flex; flex-wrap: wrap; gap: 2px 7px; color: var(--legacy-text) !important; font-weight: 750; line-height: 1.35; white-space: normal !important; }
+.currency-name { color: var(--legacy-muted); font-weight: 650; }
+.resource-arrow { color: var(--legacy-muted); font-size: 1.2rem; }
+.resource-button.move { background: color-mix(in srgb, var(--move-color) 72%, var(--legacy-surface)); color: var(--move-text); }
+.resource-button.move .resource-copy small, .resource-button.move .resource-number, .resource-button.move .resource-arrow { color: currentColor; opacity: 0.78; }
+.pagination { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 8px; border-top: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.pagination button { min-height: 34px; padding: 5px 9px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-surface); }
+.pagination span { color: var(--legacy-muted); text-align: center; font-size: 0.7rem; }
+.detail-panel { min-width: 0; outline: none; }
+.empty-detail { display: flex; gap: 18px; align-items: center; min-height: 320px; padding: 30px; border: 1px dashed var(--legacy-border-strong); color: var(--legacy-muted); background: var(--legacy-surface); }
+.empty-symbol { display: grid; width: 70px; height: 70px; place-items: center; border: 1px solid var(--legacy-border); color: var(--legacy-text); font-size: 1.7rem; background: var(--legacy-page); }
+.empty-detail h2 { margin: 0; color: var(--legacy-text); }
+.empty-detail p { margin: 7px 0 0; }
+@media (max-width: 1000px) { .directory-layout { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); } }
+@media (max-width: 760px) { .directory-layout { grid-template-columns: 1fr; gap: 12px; } .directory-panel { position: static; max-height: none; } .resource-list { max-height: 65vh; } .detail-panel { scroll-margin-top: 105px; } }
 </style>

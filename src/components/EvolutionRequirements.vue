@@ -1,6 +1,6 @@
 <template>
   <section
-    v-if="loading || transitions.length"
+    v-if="loading || hasError || transitions.length || formConditionGroups.length"
     class="requirements-card"
     aria-labelledby="evolution-requirements-title"
   >
@@ -18,12 +18,65 @@
     <p v-if="loading" class="status-message" role="status">{{ labels.loading }}</p>
     <p v-else-if="hasError" class="error-message" role="alert">{{ labels.error }}</p>
 
-    <div v-else class="transition-list">
-      <article
-        v-for="transition in transitions"
-        :key="`${transition.sourceName}-${transition.targetName}-${transition.stage}`"
-        class="transition-card"
+    <div v-else class="requirements-content">
+      <section
+        v-if="formConditionGroups.length"
+        class="form-condition-section"
+        aria-labelledby="form-condition-title"
       >
+        <div class="subsection-heading">
+          <h4 id="form-condition-title">{{ labels.formConditionsTitle }}</h4>
+          <p>{{ labels.formConditionsHint }}</p>
+        </div>
+        <div class="form-condition-grid">
+          <article
+            v-for="form in formConditionGroups"
+            :key="form.name"
+            class="form-condition-card"
+          >
+            <div class="form-condition-identity">
+              <img
+                :src="getFormSprite(form)"
+                :alt="getPokemonFormLabel(form)"
+                width="64"
+                height="64"
+                loading="lazy"
+                decoding="async"
+              >
+              <div>
+                <small>{{ form.isBattleOnly ? labels.battleForm : labels.triggeredForm }}</small>
+                <strong>{{ getPokemonFormLabel(form) }}</strong>
+              </div>
+            </div>
+            <div class="condition-list">
+              <template
+                v-for="condition in form.conditions"
+                :key="`${condition.trigger}-${condition.name}-${condition.baseForm}`"
+              >
+                <span v-if="condition.baseForm" class="condition-chip">
+                  {{ labels.fromForm }} {{ getReferencedFormLabel(condition.baseForm) }}
+                </span>
+                <button
+                  v-if="getFormConditionResourceKind(condition)"
+                  type="button"
+                  class="condition-chip item-condition"
+                  @click="openFormConditionResource(condition)"
+                >
+                  {{ getFormConditionText(condition) }}
+                </button>
+                <span v-else class="condition-chip">{{ getFormConditionText(condition) }}</span>
+              </template>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <div v-if="transitions.length" class="transition-list">
+        <article
+          v-for="transition in transitions"
+          :key="`${transition.sourceName}-${transition.targetName}-${transition.stage}`"
+          class="transition-card"
+        >
         <div class="transition-path">
           <div class="species-node">
             <img
@@ -65,6 +118,17 @@
             <strong v-if="transition.details.length > 1" class="method-title">
               {{ labels.alternative }} {{ detailIndex + 1 }}
             </strong>
+            <div v-if="detail.baseForm || detail.evolvedForm" class="form-transition-path">
+              <span>
+                <small>{{ labels.sourceForm }}</small>
+                <strong>{{ getEvolutionFormLabel(detail.baseForm, detail.baseFormUrl, transition.sourceName) }}</strong>
+              </span>
+              <span aria-hidden="true">→</span>
+              <span>
+                <small>{{ labels.targetForm }}</small>
+                <strong>{{ getEvolutionFormLabel(detail.evolvedForm, detail.evolvedFormUrl, transition.targetName) }}</strong>
+              </span>
+            </div>
             <div class="condition-list">
               <template
                 v-for="condition in formatConditions(detail)"
@@ -93,7 +157,8 @@
             {{ labels.noDetails }}
           </p>
         </div>
-      </article>
+        </article>
+      </div>
     </div>
   </section>
 </template>
@@ -101,10 +166,13 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
+import { loadGermanPokemonCatalog } from '@/services/localizationCatalog';
 import PokeAPI from '@/services/pokeapi';
 import {
+  collectPokemonFormConditionResources,
   collectEvolutionResourceNames,
   collectEvolutionTransitions,
+  normalizePokemonFormConditions,
 } from '@/utils/evolutionRequirements';
 import { getLocalizedTypeName } from '@/utils/localization';
 import {
@@ -113,11 +181,16 @@ import {
   getResourceId,
 } from '@/utils/resource';
 import { getPokemonListSprite } from '@/utils/sprites';
+import { getVersionGroupLabel } from '@/utils/versionGroups';
 
 const props = defineProps({
   pokemon: {
     type: Object,
     required: true,
+  },
+  activePokemon: {
+    type: Object,
+    default: null,
   },
   isShiny: {
     type: Boolean,
@@ -137,6 +210,10 @@ const speciesByName = ref({});
 const itemsByName = ref({});
 const movesByName = ref({});
 const locationsByName = ref({});
+const abilitiesByName = ref({});
+const formDetailsByName = ref({});
+const formConditionGroups = ref([]);
+const pokemonCatalog = ref(new Map());
 const loading = ref(false);
 const hasError = ref(false);
 let requestId = 0;
@@ -145,7 +222,19 @@ const labels = computed(() => language.value === 'de'
   ? {
       kicker: 'Formen und Verzweigungen',
       title: 'Vollständige Entwicklungsvoraussetzungen',
-      note: 'Alle von der PokéAPI gelieferten Alternativen werden einzeln angezeigt. Dadurch bleiben abweichende Voraussetzungen für Formen, Geschlechter und verzweigte Entwicklungen sichtbar.',
+      note: 'Alle verfügbaren Alternativen werden einzeln angezeigt. Dadurch bleiben abweichende Voraussetzungen für Formen, Geschlechter und verzweigte Entwicklungen sichtbar.',
+      formConditionsTitle: 'Formwechselbedingungen',
+      formConditionsHint: 'Kampf- und Sonderformen zeigen ihre konkrete Auslösebedingung und gegebenenfalls die erforderliche Ausgangsform.',
+      battleForm: 'Kampfform',
+      triggeredForm: 'Ausgelöste Form',
+      fromForm: 'Ausgangsform:',
+      sourceForm: 'Ausgangsform',
+      targetForm: 'Zielform',
+      triggerHeldItem: '{resource} tragen',
+      triggerAbility: 'Fähigkeit {resource}',
+      triggerMove: 'Attacke {resource} einsetzen',
+      triggerGigantamax: 'Gigadynamax-Faktor',
+      triggerOther: 'Auslöser: {trigger}{resource}',
       varieties: 'Formen/Varianten',
       loading: 'Entwicklungsvoraussetzungen werden geladen…',
       error: 'Die vollständigen Entwicklungsvoraussetzungen konnten nicht geladen werden.',
@@ -172,6 +261,17 @@ const labels = computed(() => language.value === 'de'
       partySpecies: '{species} im Team',
       partyType: 'Ein {type}-Pokémon im Team',
       tradeSpecies: 'Tausch gegen {species}',
+      versionGroup: 'Seit {version}',
+      versionGroupNumber: 'Versionsgruppe #{value}',
+      defaultEvolution: 'Standardentwicklung',
+      alternateEvolution: 'Alternative Entwicklung',
+      nearSpecialRock: 'In der Nähe eines Moos- oder Eisfelsens',
+      multiplayer: 'Mehrspieler-Verbindung erforderlich',
+      region: 'In der Region {region}',
+      usedMove: 'Attacke {move} einsetzen',
+      moveCount: 'Mindestens {value}× einsetzen',
+      steps: 'Mindestens {value} Schritte zurücklegen',
+      damageTaken: 'Mindestens {value} Schadenspunkte erleiden',
       female: 'Nur weiblich',
       male: 'Nur männlich',
       attackHigher: 'Angriff höher als Verteidigung',
@@ -181,7 +281,19 @@ const labels = computed(() => language.value === 'de'
   : {
       kicker: 'Forms and branches',
       title: 'Complete evolution requirements',
-      note: 'Every alternative supplied by PokéAPI is shown separately so form-, gender- and branch-specific requirements remain visible.',
+      note: 'Every available alternative is shown separately so form-, gender- and branch-specific requirements remain visible.',
+      formConditionsTitle: 'Form-change requirements',
+      formConditionsHint: 'Battle and special forms show their concrete trigger and required source form where applicable.',
+      battleForm: 'Battle form',
+      triggeredForm: 'Triggered form',
+      fromForm: 'Source form:',
+      sourceForm: 'Source form',
+      targetForm: 'Target form',
+      triggerHeldItem: 'Hold {resource}',
+      triggerAbility: 'Ability {resource}',
+      triggerMove: 'Use {resource}',
+      triggerGigantamax: 'Gigantamax Factor',
+      triggerOther: 'Trigger: {trigger}{resource}',
       varieties: 'forms/variants',
       loading: 'Loading evolution requirements…',
       error: 'The complete evolution requirements could not be loaded.',
@@ -208,6 +320,17 @@ const labels = computed(() => language.value === 'de'
       partySpecies: '{species} in the party',
       partyType: 'A {type}-type Pokémon in the party',
       tradeSpecies: 'Trade for {species}',
+      versionGroup: 'Since {version}',
+      versionGroupNumber: 'Version group #{value}',
+      defaultEvolution: 'Default evolution',
+      alternateEvolution: 'Alternate evolution',
+      nearSpecialRock: 'Near a Moss Rock or Ice Rock',
+      multiplayer: 'Multiplayer connection required',
+      region: 'In the {region} region',
+      usedMove: 'Use {move}',
+      moveCount: 'Use at least {value} times',
+      steps: 'Walk at least {value} steps',
+      damageTaken: 'Take at least {value} damage',
       female: 'Female only',
       male: 'Male only',
       attackHigher: 'Attack higher than Defense',
@@ -241,6 +364,67 @@ const getLocationLabel = (name) => getLocalizedName(
   name,
   language.value,
 );
+const getAbilityLabel = (name) => getLocalizedName(
+  abilitiesByName.value[name]?.names,
+  name,
+  language.value,
+);
+const getPokemonFormLabel = (form) => getLocalizedName(
+  form.names,
+  form.name,
+  language.value,
+);
+const getEvolutionFormLabel = (name, url, speciesName) => {
+  const pokemonId = getResourceId(url);
+  const catalogLabel = pokemonId === null ? '' : pokemonCatalog.value.get(pokemonId);
+  return catalogLabel || formatResourceName(name || speciesName);
+};
+const getReferencedFormLabel = (name) => {
+  const form = formDetailsByName.value[name];
+  const pokemonId = getResourceId(form?.pokemon?.url);
+  return getLocalizedName(
+    form?.names,
+    pokemonId === null ? name : pokemonCatalog.value.get(pokemonId) || name,
+    language.value,
+  );
+};
+const getFormSprite = (form) => getPokemonListSprite(
+  getResourceId(form.pokemonUrl),
+  props.spriteMode,
+  props.isShiny,
+);
+const getFormConditionResourceKind = (condition) => ({
+  item: 'items',
+  move: 'moves',
+})[condition.resourceKind] || '';
+const getFormConditionText = (condition) => {
+  const resourceLabel = condition.resourceKind === 'item'
+    ? getItemLabel(condition.name)
+    : condition.resourceKind === 'move'
+      ? getMoveLabel(condition.name)
+      : condition.resourceKind === 'ability'
+        ? getAbilityLabel(condition.name)
+        : formatResourceName(condition.name);
+
+  if (condition.trigger === 'held-item') {
+    return replace(labels.value.triggerHeldItem, { resource: resourceLabel });
+  }
+  if (condition.trigger === 'ability') {
+    return replace(labels.value.triggerAbility, { resource: resourceLabel });
+  }
+  if (condition.trigger === 'move' || condition.resourceKind === 'move') {
+    return replace(labels.value.triggerMove, { resource: resourceLabel });
+  }
+  if (condition.trigger === 'gigantamax-factor') return labels.value.triggerGigantamax;
+  return replace(labels.value.triggerOther, {
+    trigger: formatResourceName(condition.trigger),
+    resource: resourceLabel ? ` · ${resourceLabel}` : '',
+  });
+};
+const openFormConditionResource = (condition) => {
+  const kind = getFormConditionResourceKind(condition);
+  if (kind && condition.name) emit('openResource', { kind, name: condition.name });
+};
 const getSpeciesSprite = (url) => getPokemonListSprite(
   getResourceId(url),
   props.spriteMode,
@@ -251,6 +435,27 @@ const getItemSprite = (name) => itemsByName.value[name]?.sprites?.default
 
 const formatConditions = (detail) => {
   const result = [];
+
+  if (detail.versionGroup) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.versionGroup, {
+        version: getVersionGroupLabel(detail.versionGroup, language.value),
+      }),
+    });
+  } else if (detail.versionGroupId !== null) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.versionGroupNumber, { value: detail.versionGroupId }),
+    });
+  }
+
+  if (detail.isDefault !== null) {
+    result.push({
+      kind: 'text',
+      text: detail.isDefault ? labels.value.defaultEvolution : labels.value.alternateEvolution,
+    });
+  }
 
   if (detail.trigger === 'level-up') {
     result.push({
@@ -312,6 +517,8 @@ const formatConditions = (detail) => {
       text: replace(labels.value.location, { location: getLocationLabel(detail.location) }),
     });
   }
+  if (detail.nearSpecialRock) result.push({ kind: 'text', text: labels.value.nearSpecialRock });
+  if (detail.needsMultiplayer) result.push({ kind: 'text', text: labels.value.multiplayer });
   if (detail.needsOverworldRain) result.push({ kind: 'text', text: labels.value.rain });
   if (detail.turnUpsideDown) result.push({ kind: 'text', text: labels.value.upsideDown });
   if (detail.partySpecies) {
@@ -334,6 +541,36 @@ const formatConditions = (detail) => {
       text: replace(labels.value.tradeSpecies, { species: getSpeciesLabel(detail.tradeSpecies) }),
     });
   }
+  if (detail.region) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.region, { region: formatResourceName(detail.region) }),
+    });
+  }
+  if (detail.usedMove) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.usedMove, { move: getMoveLabel(detail.usedMove) }),
+    });
+  }
+  if (detail.minMoveCount !== null) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.moveCount, { value: detail.minMoveCount }),
+    });
+  }
+  if (detail.minSteps !== null) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.steps, { value: detail.minSteps }),
+    });
+  }
+  if (detail.minDamageTaken !== null) {
+    result.push({
+      kind: 'text',
+      text: replace(labels.value.damageTaken, { value: detail.minDamageTaken }),
+    });
+  }
   if (detail.gender === 1) result.push({ kind: 'text', text: labels.value.female });
   if (detail.gender === 2) result.push({ kind: 'text', text: labels.value.male });
   if (detail.relativePhysicalStats === 1) result.push({ kind: 'text', text: labels.value.attackHigher });
@@ -349,7 +586,7 @@ const mapSettledByName = (results) => Object.fromEntries(
     .map((result) => [result.value.data.name, result.value.data]),
 );
 
-const loadRequirements = async (name) => {
+const loadRequirements = async (name, activePokemonName = '') => {
   const activeId = ++requestId;
   loading.value = true;
   hasError.value = false;
@@ -359,21 +596,58 @@ const loadRequirements = async (name) => {
   itemsByName.value = {};
   movesByName.value = {};
   locationsByName.value = {};
+  abilitiesByName.value = {};
+  formDetailsByName.value = {};
+  formConditionGroups.value = [];
 
   try {
-    const speciesResponse = await PokeAPI.getPokemonSpecies(name);
+    const [speciesResponse, activeDetailsResponse, resolvedPokemonCatalog] = await Promise.all([
+      PokeAPI.getPokemonSpecies(name),
+      props.activePokemon?.name === activePokemonName
+        ? Promise.resolve({ data: props.activePokemon })
+        : activePokemonName
+          ? PokeAPI.getPokemonDetails(activePokemonName)
+          : Promise.resolve({ data: null }),
+      loadGermanPokemonCatalog().catch(() => new Map()),
+    ]);
     const species = speciesResponse.data;
-    const evolutionResponse = species.evolution_chain?.url
-      ? await PokeAPI.getEvolutionChain(species.evolution_chain.url)
-      : { data: { chain: null } };
+    const activeDetails = activeDetailsResponse.data;
+    const [evolutionResponse, formResults] = await Promise.all([
+      species.evolution_chain?.url
+        ? PokeAPI.getEvolutionChain(species.evolution_chain.url)
+        : Promise.resolve({ data: { chain: null } }),
+      Promise.allSettled((activeDetails?.forms || []).map((form) => (
+        PokeAPI.getPokemonFormDetails(form.name)
+      ))),
+    ]);
     const resolvedTransitions = collectEvolutionTransitions(evolutionResponse.data.chain);
-    const resources = collectEvolutionResourceNames(resolvedTransitions);
+    const evolutionResources = collectEvolutionResourceNames(resolvedTransitions);
+    const resolvedFormDetails = mapSettledByName(formResults);
+    const resolvedFormConditions = normalizePokemonFormConditions(
+      Object.values(resolvedFormDetails),
+    );
+    const formResources = collectPokemonFormConditionResources(resolvedFormConditions);
+    const itemNames = [...new Set([...evolutionResources.items, ...formResources.items])];
+    const moveNames = [...new Set([...evolutionResources.moves, ...formResources.moves])];
 
-    const [speciesResults, itemResults, moveResults, locationResults] = await Promise.all([
-      Promise.allSettled(resources.species.map((resourceName) => PokeAPI.getPokemonSpecies(resourceName))),
-      Promise.allSettled(resources.items.map((resourceName) => PokeAPI.getItemDetails(resourceName))),
-      Promise.allSettled(resources.moves.map((resourceName) => PokeAPI.getMoveDetails(resourceName))),
-      Promise.allSettled(resources.locations.map((resourceName) => PokeAPI.getLocationDetails(resourceName))),
+    const baseFormResultsPromise = Promise.allSettled(
+      formResources.baseForms.map((formName) => PokeAPI.getPokemonFormDetails(formName)),
+    );
+
+    const [
+      speciesResults,
+      itemResults,
+      moveResults,
+      locationResults,
+      abilityResults,
+      baseFormResults,
+    ] = await Promise.all([
+      Promise.allSettled(evolutionResources.species.map((resourceName) => PokeAPI.getPokemonSpecies(resourceName))),
+      Promise.allSettled(itemNames.map((resourceName) => PokeAPI.getItemDetails(resourceName))),
+      Promise.allSettled(moveNames.map((resourceName) => PokeAPI.getMoveDetails(resourceName))),
+      Promise.allSettled(evolutionResources.locations.map((resourceName) => PokeAPI.getLocationDetails(resourceName))),
+      Promise.allSettled(formResources.abilities.map((resourceName) => PokeAPI.getAbilityDetails(resourceName))),
+      baseFormResultsPromise,
     ]);
 
     if (activeId !== requestId) return;
@@ -386,6 +660,13 @@ const loadRequirements = async (name) => {
     itemsByName.value = mapSettledByName(itemResults);
     movesByName.value = mapSettledByName(moveResults);
     locationsByName.value = mapSettledByName(locationResults);
+    abilitiesByName.value = mapSettledByName(abilityResults);
+    formDetailsByName.value = {
+      ...resolvedFormDetails,
+      ...mapSettledByName(baseFormResults),
+    };
+    formConditionGroups.value = resolvedFormConditions;
+    pokemonCatalog.value = resolvedPokemonCatalog;
   } catch (error) {
     if (activeId !== requestId) return;
     console.error('Failed to load complete evolution requirements:', error);
@@ -396,9 +677,9 @@ const loadRequirements = async (name) => {
 };
 
 watch(
-  () => props.pokemon?.name,
-  (name) => {
-    if (name) void loadRequirements(name);
+  () => [props.pokemon?.name, props.activePokemon?.name],
+  ([name, activePokemonName]) => {
+    if (name) void loadRequirements(name, activePokemonName);
   },
   { immediate: true },
 );
@@ -459,10 +740,86 @@ watch(
   color: #b91c1c;
 }
 
+.requirements-content {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.form-condition-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--legacy-border);
+  background: var(--legacy-page);
+}
+
+.subsection-heading h4,
+.subsection-heading p {
+  margin: 0;
+}
+
+.subsection-heading h4 {
+  font-size: 0.9rem;
+}
+
+.subsection-heading p {
+  margin-top: 4px;
+  color: var(--legacy-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.form-condition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.form-condition-card {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--legacy-border);
+  background: var(--legacy-surface);
+}
+
+.form-condition-identity {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+}
+
+.form-condition-identity img {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.form-condition-identity div {
+  display: grid;
+  min-width: 0;
+}
+
+.form-condition-identity small {
+  color: var(--legacy-muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.form-condition-identity strong {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
+
 .transition-list {
   display: grid;
   gap: 10px;
-  margin-top: 16px;
 }
 
 .transition-card {
@@ -539,6 +896,36 @@ watch(
   text-transform: uppercase;
 }
 
+.form-transition-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 7px;
+  border: 1px solid var(--legacy-border);
+  color: var(--legacy-muted);
+  background: var(--legacy-page);
+}
+
+.form-transition-path > span:not([aria-hidden]) {
+  display: grid;
+  min-width: 0;
+}
+
+.form-transition-path small {
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.form-transition-path strong {
+  margin-top: 2px;
+  color: var(--legacy-text);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
 .condition-list {
   display: flex;
   flex-wrap: wrap;
@@ -583,6 +970,10 @@ watch(
 }
 
 @media (max-width: 900px) {
+  .form-condition-grid {
+    grid-template-columns: 1fr;
+  }
+
   .transition-card {
     grid-template-columns: 1fr;
   }
@@ -600,6 +991,10 @@ watch(
   .path-arrow {
     transform: rotate(90deg);
     justify-self: center;
+  }
+
+  .form-transition-path {
+    grid-template-columns: 1fr;
   }
 }
 </style>

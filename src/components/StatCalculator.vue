@@ -24,7 +24,7 @@
         <span>{{ labels.form }}</span>
         <select v-model="selectedFormName" :disabled="loadingForms || formOptions.length < 2">
           <option v-for="option in formOptions" :key="option.name" :value="option.name">
-            {{ option.label }}
+            {{ option.label }} · {{ option.isDefault ? labels.standardForm : labels.variantForm }}
           </option>
         </select>
         <small v-if="loadingForms">{{ labels.loadingForms }}</small>
@@ -109,13 +109,23 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
+import { loadGermanPokemonCatalog } from '@/services/localizationCatalog';
+import { useActivePokemonForm } from '@/state/activePokemonForm';
 import {
-  getCatalogLabel,
-  loadGermanPokemonCatalog,
-} from '@/services/localizationCatalog';
+  createPokemonVarietyOptions,
+  getDefaultPokemonVariety,
+  isPokemonForSpecies,
+  mapWithConcurrency,
+} from '@/utils/pokemonForms';
 import {
   BATTLE_STATS,
   NATURES,
@@ -124,7 +134,6 @@ import {
   getTotalEvs,
   normalizeBaseStats,
 } from '@/utils/statCalculator';
-import { formatResourceName } from '@/utils/resource';
 
 const props = defineProps({
   pokemonDetails: {
@@ -134,6 +143,12 @@ const props = defineProps({
 });
 
 const { language } = useI18n();
+const {
+  activePokemonForm,
+  resetActivePokemonForm,
+  setActivePokemonForm,
+  setDefaultPokemonForm,
+} = useActivePokemonForm();
 const MAX_PARALLEL_REQUESTS = 6;
 const level = ref(50);
 const nature = ref('hardy');
@@ -145,49 +160,21 @@ const evs = reactive(Object.fromEntries(BATTLE_STATS.map((statName) => [statName
 let formRequestId = 0;
 
 const germanNatureNames = {
-  hardy: 'Robust',
-  lonely: 'Solo',
-  brave: 'Mutig',
-  adamant: 'Hart',
-  naughty: 'Frech',
-  bold: 'Kühn',
-  docile: 'Sanft',
-  relaxed: 'Locker',
-  impish: 'Pfiffig',
-  lax: 'Lasch',
-  timid: 'Scheu',
-  hasty: 'Hastig',
-  serious: 'Ernst',
-  jolly: 'Froh',
-  naive: 'Naiv',
-  modest: 'Mäßig',
-  mild: 'Mild',
-  quiet: 'Ruhig',
-  bashful: 'Zaghaft',
-  rash: 'Hitzig',
-  calm: 'Still',
-  gentle: 'Zart',
-  sassy: 'Forsch',
-  careful: 'Sacht',
-  quirky: 'Kauzig',
+  hardy: 'Robust', lonely: 'Solo', brave: 'Mutig', adamant: 'Hart', naughty: 'Frech',
+  bold: 'Kühn', docile: 'Sanft', relaxed: 'Locker', impish: 'Pfiffig', lax: 'Lasch',
+  timid: 'Scheu', hasty: 'Hastig', serious: 'Ernst', jolly: 'Froh', naive: 'Naiv',
+  modest: 'Mäßig', mild: 'Mild', quiet: 'Ruhig', bashful: 'Zaghaft', rash: 'Hitzig',
+  calm: 'Still', gentle: 'Zart', sassy: 'Forsch', careful: 'Sacht', quirky: 'Kauzig',
 };
 
 const germanStatNames = {
-  hp: 'KP',
-  attack: 'Angriff',
-  defense: 'Verteidigung',
-  'special-attack': 'Spezial-Angriff',
-  'special-defense': 'Spezial-Verteidigung',
-  speed: 'Initiative',
+  hp: 'KP', attack: 'Angriff', defense: 'Verteidigung',
+  'special-attack': 'Spezial-Angriff', 'special-defense': 'Spezial-Verteidigung', speed: 'Initiative',
 };
 
 const englishStatNames = {
-  hp: 'HP',
-  attack: 'Attack',
-  defense: 'Defense',
-  'special-attack': 'Special Attack',
-  'special-defense': 'Special Defense',
-  speed: 'Speed',
+  hp: 'HP', attack: 'Attack', defense: 'Defense',
+  'special-attack': 'Special Attack', 'special-defense': 'Special Defense', speed: 'Speed',
 };
 
 const labels = computed(() => language.value === 'de'
@@ -195,7 +182,9 @@ const labels = computed(() => language.value === 'de'
       competitive: 'Werteplanung',
       title: 'EV-, IV-/DV- und Wesen-Rechner',
       form: 'Pokémon-Form',
-      formHint: 'Jede Form verwendet ihre eigenen Basiswerte.',
+      standardForm: 'Standardform',
+      variantForm: 'Form',
+      formHint: 'Die Auswahl ändert Basiswerte und erlernbare Attacken auf genau diese Form.',
       loadingForms: 'Weitere Formen werden geladen…',
       baseTotal: 'Basiswertsumme',
       reset: 'Auf Standard zurücksetzen',
@@ -207,8 +196,6 @@ const labels = computed(() => language.value === 'de'
       ev: 'EV',
       result: 'Ergebnis',
       neutral: 'neutral',
-      increased: 'erhöht',
-      decreased: 'gesenkt',
       evTotal: 'Verteilte EV',
       evTooHigh: 'Die zulässige Gesamtgrenze von 510 EV ist überschritten.',
       evHint: 'Standard: Level 50, 0 IV/DV und 0 EV. Pro Statuswert zählen höchstens 252 EV.',
@@ -218,7 +205,9 @@ const labels = computed(() => language.value === 'de'
       competitive: 'Stat planning',
       title: 'EV, IV/DV and nature calculator',
       form: 'Pokémon form',
-      formHint: 'Every form uses its own base stats.',
+      standardForm: 'Default form',
+      variantForm: 'Form',
+      formHint: 'The selection changes base stats and learnable moves to this exact form.',
       loadingForms: 'Loading additional forms…',
       baseTotal: 'Base stat total',
       reset: 'Reset to defaults',
@@ -230,8 +219,6 @@ const labels = computed(() => language.value === 'de'
       ev: 'EV',
       result: 'Result',
       neutral: 'neutral',
-      increased: 'raised',
-      decreased: 'lowered',
       evTotal: 'Allocated EVs',
       evTooHigh: 'The legal total limit of 510 EVs has been exceeded.',
       evHint: 'Default: level 50, 0 IV/DV and 0 EV. Each stat accepts up to 252 EVs.',
@@ -239,23 +226,18 @@ const labels = computed(() => language.value === 'de'
     });
 
 const statNames = BATTLE_STATS;
-const activeOption = computed(() => {
-  return formOptions.value.find((option) => option.name === selectedFormName.value)
-    || formOptions.value[0]
-    || { details: props.pokemonDetails };
-});
+const activeOption = computed(() => formOptions.value.find((option) => (
+  option.name === selectedFormName.value
+)) || formOptions.value[0] || { details: props.pokemonDetails });
 const activePokemonDetails = computed(() => activeOption.value.details || props.pokemonDetails);
-const activeSprite = computed(() => {
-  const details = activePokemonDetails.value;
-  return details?.sprites?.other?.['official-artwork']?.front_default
-    || details?.sprites?.front_default
-    || '';
-});
-const baseStats = computed(() => normalizeBaseStats(activePokemonDetails.value.stats));
+const activeSprite = computed(() => activePokemonDetails.value?.sprites?.other?.['official-artwork']?.front_default
+  || activePokemonDetails.value?.sprites?.front_default
+  || '');
+const baseStats = computed(() => normalizeBaseStats(activePokemonDetails.value?.stats));
 const baseTotal = computed(() => Object.values(baseStats.value).reduce((total, value) => total + value, 0));
 const natureDetails = computed(() => getNature(nature.value));
 const calculatedStats = computed(() => calculatePokemonStats({
-  pokemonStats: activePokemonDetails.value.stats,
+  pokemonStats: activePokemonDetails.value?.stats,
   ivs,
   evs,
   level: level.value,
@@ -269,17 +251,12 @@ const natureOptions = computed(() => NATURES.map((entry) => ({
     : entry.name.charAt(0).toUpperCase() + entry.name.slice(1),
 })));
 
-const getStatLabel = (statName) => {
-  return language.value === 'de'
-    ? germanStatNames[statName]
-    : englishStatNames[statName];
-};
+const getStatLabel = (statName) => language.value === 'de'
+  ? germanStatNames[statName]
+  : englishStatNames[statName];
 
 const formatNatureEffect = (entry) => {
-  if (!entry.increased || !entry.decreased) {
-    return labels.value.neutral;
-  }
-
+  if (!entry.increased || !entry.decreased) return labels.value.neutral;
   return `+${getStatLabel(entry.increased)} / −${getStatLabel(entry.decreased)}`;
 };
 
@@ -298,49 +275,55 @@ const resetTrainingValues = () => {
 const resetCalculator = () => {
   level.value = 50;
   nature.value = 'hardy';
-  selectedFormName.value = props.pokemonDetails.name;
   resetTrainingValues();
+  const defaultDetails = resetActivePokemonForm()
+    || getDefaultPokemonVariety(formOptions.value)?.details
+    || props.pokemonDetails;
+  selectedFormName.value = defaultDetails.name;
+  setActivePokemonForm(defaultDetails);
 };
 
-const loadFormOptions = async () => {
-  const activeRequestId = ++formRequestId;
+const loadFormOptions = async ({ preserveSelection = false } = {}) => {
+  const requestId = ++formRequestId;
   const currentDetails = props.pokemonDetails;
-  selectedFormName.value = currentDetails.name;
-  formOptions.value = [{
-    name: currentDetails.name,
-    id: currentDetails.id,
-    label: formatResourceName(currentDetails.name),
-    details: currentDetails,
-  }];
+  const globallyActiveDetails = activePokemonForm.value;
+  const previousSelection = preserveSelection && globallyActiveDetails?.species?.name === currentDetails.species?.name
+    ? globallyActiveDetails.name
+    : currentDetails.name;
+  selectedFormName.value = previousSelection;
+  if (!preserveSelection || !formOptions.value.length) {
+    formOptions.value = [{
+      name: currentDetails.name,
+      id: currentDetails.id,
+      label: currentDetails.name,
+      isDefault: false,
+      isForm: true,
+      details: currentDetails,
+    }];
+  }
   loadingForms.value = true;
 
   try {
     const speciesName = currentDetails.species?.name || currentDetails.name;
     const speciesResponse = await PokeAPI.getPokemonSpecies(speciesName);
-    const varieties = speciesResponse.data.varieties || [];
+    const resolvedSpecies = speciesResponse.data;
+    if (!isPokemonForSpecies(currentDetails, resolvedSpecies)) {
+      throw new Error(`Pokémon ${currentDetails.name} does not belong to species ${resolvedSpecies.name}.`);
+    }
+
+    const varieties = resolvedSpecies.varieties || [];
     const detailsByName = new Map([[currentDetails.name, currentDetails]]);
-    let nextIndex = 0;
 
-    const worker = async () => {
-      while (nextIndex < varieties.length) {
-        const variety = varieties[nextIndex];
-        nextIndex += 1;
-        const name = variety.pokemon?.name;
-        if (!name || detailsByName.has(name)) continue;
-
-        try {
-          const response = await PokeAPI.getPokemonDetails(name);
-          detailsByName.set(name, response.data);
-        } catch (error) {
-          console.error(`Failed to load calculator form ${name}:`, error);
-        }
+    await mapWithConcurrency(varieties, async (variety) => {
+      const name = variety.pokemon?.name;
+      if (!name || detailsByName.has(name)) return;
+      try {
+        const response = await PokeAPI.getPokemonDetails(name);
+        detailsByName.set(name, response.data);
+      } catch (error) {
+        console.error(`Failed to load calculator form ${name}:`, error);
       }
-    };
-
-    await Promise.all(Array.from(
-      { length: Math.min(MAX_PARALLEL_REQUESTS, Math.max(1, varieties.length)) },
-      worker,
-    ));
+    }, MAX_PARALLEL_REQUESTS);
 
     let germanCatalog = null;
     if (language.value === 'de') {
@@ -351,31 +334,27 @@ const loadFormOptions = async () => {
       }
     }
 
-    if (activeRequestId !== formRequestId) return;
-    formOptions.value = varieties
-      .map((variety) => detailsByName.get(variety.pokemon?.name))
-      .filter(Boolean)
-      .map((details) => ({
-        name: details.name,
-        id: details.id,
-        label: language.value === 'de' && germanCatalog
-          ? getCatalogLabel(germanCatalog, details.id, details.name)
-          : formatResourceName(details.name),
-        details,
-      }))
-      .sort((first, second) => {
-        if (first.name === currentDetails.name) return -1;
-        if (second.name === currentDetails.name) return 1;
-        return first.label.localeCompare(second.label, language.value);
-      });
+    if (requestId !== formRequestId) return;
 
-    if (!formOptions.value.some((option) => option.name === selectedFormName.value)) {
-      selectedFormName.value = formOptions.value[0]?.name || currentDetails.name;
-    }
+    const options = createPokemonVarietyOptions({
+      species: resolvedSpecies,
+      detailsByName,
+      catalog: germanCatalog,
+      language: language.value,
+    });
+    if (!options.length) throw new Error(`No verified varieties were found for ${resolvedSpecies.name}.`);
+
+    formOptions.value = options;
+    const defaultOption = getDefaultPokemonVariety(options);
+    if (defaultOption) setDefaultPokemonForm(defaultOption.details);
+
+    selectedFormName.value = formOptions.value.some((option) => option.name === previousSelection)
+      ? previousSelection
+      : defaultOption?.name || currentDetails.name;
   } catch (error) {
     console.error('Failed to load calculator forms:', error);
   } finally {
-    if (activeRequestId === formRequestId) loadingForms.value = false;
+    if (requestId === formRequestId) loadingForms.value = false;
   }
 };
 
@@ -384,17 +363,39 @@ watch(level, (value) => {
   level.value = Math.min(100, Math.max(1, Number.isFinite(numericValue) ? Math.trunc(numericValue) : 50));
 });
 
+watch(activePokemonDetails, (details) => {
+  setActivePokemonForm(details);
+}, { immediate: true });
+
+watch(activePokemonForm, (details) => {
+  if (
+    !details
+    || details.species?.name !== props.pokemonDetails.species?.name
+    || !formOptions.value.some((option) => option.name === details.name)
+  ) {
+    return;
+  }
+
+  selectedFormName.value = details.name;
+});
+
 watch(
   () => props.pokemonDetails.name,
   () => {
-    resetCalculator();
+    level.value = 50;
+    nature.value = 'hardy';
+    resetTrainingValues();
     void loadFormOptions();
   },
   { immediate: true },
 );
 
 watch(language, () => {
-  void loadFormOptions();
+  void loadFormOptions({ preserveSelection: true });
+});
+
+onBeforeUnmount(() => {
+  formRequestId += 1;
 });
 </script>
 
@@ -414,254 +415,39 @@ watch(language, () => {
   align-items: end;
 }
 
-.calculator-heading h3 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.calculator-eyebrow {
-  margin: 0 0 4px;
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.reset-button {
-  min-height: 36px;
-  padding: 7px 10px;
-  border: 1px solid var(--legacy-border);
-  border-radius: 4px;
-  color: var(--legacy-text);
-  font-size: 0.72rem;
-  font-weight: 800;
-  cursor: pointer;
-  background: var(--legacy-page);
-}
-
-.reset-button:hover {
-  border-color: var(--legacy-border-strong);
-  background: var(--legacy-surface-hover);
-}
-
-.form-selector {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  margin-top: 16px;
-  padding: 10px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.form-sprite {
-  display: grid;
-  width: 88px;
-  height: 88px;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-surface);
-}
-
-.form-sprite img {
-  width: 82px;
-  height: 82px;
-  object-fit: contain;
-}
-
-.form-selector label,
-.level-field,
-.nature-field {
-  display: grid;
-  gap: 5px;
-  color: var(--legacy-muted);
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
-.form-selector select,
-.nature-field select,
-.level-field input,
-.stat-row input {
-  min-height: 36px;
-  padding: 6px 8px;
-  border: 1px solid var(--legacy-border);
-  border-radius: 4px;
-  color: var(--legacy-text);
-  background: var(--legacy-surface);
-}
-
-.form-selector small {
-  color: var(--legacy-muted);
-  font-size: 0.66rem;
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.base-total {
-  display: grid;
-  justify-items: end;
-  min-width: 90px;
-}
-
-.base-total span {
-  color: var(--legacy-muted);
-  font-size: 0.66rem;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
-.base-total strong {
-  margin-top: 4px;
-  font-size: 1.2rem;
-}
-
-.control-grid {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.level-field input {
-  width: 100%;
-}
-
-.formula-note {
-  margin: 12px 0 0;
-  color: var(--legacy-muted);
-  font-size: 0.72rem;
-  line-height: 1.5;
-}
-
-.stat-table {
-  display: grid;
-  gap: 5px;
-  margin-top: 16px;
-  overflow-x: auto;
-}
-
-.stat-row {
-  display: grid;
-  grid-template-columns: minmax(130px, 1.5fr) 64px 82px 82px 82px;
-  gap: 8px;
-  align-items: center;
-  min-width: 500px;
-  padding: 8px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.stat-head {
-  color: var(--legacy-muted);
-  font-size: 0.7rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.stat-row input {
-  width: 100%;
-}
-
-.base-value,
-.result-value {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.result-value.increased {
-  color: #15803d;
-}
-
-.result-value.decreased {
-  color: #b91c1c;
-}
-
-.calculator-summary {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 12px;
-  margin-top: 14px;
-  padding: 12px;
-  border: 1px solid var(--legacy-border);
-  background: var(--legacy-page);
-}
-
-.calculator-summary small {
-  grid-column: 1 / -1;
-  color: var(--legacy-muted);
-  line-height: 1.45;
-}
-
-.calculator-summary.invalid {
-  border-color: #b91c1c;
-}
-
-.calculator-summary.invalid strong,
-.calculator-summary.invalid small {
-  color: #b91c1c;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
+.calculator-heading h3 { margin: 0; font-size: 1.2rem; }
+.calculator-eyebrow { margin: 0 0 4px; color: var(--legacy-muted); font-size: 0.7rem; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+.reset-button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--legacy-border-strong); border-radius: 4px; color: var(--legacy-text); cursor: pointer; background: var(--legacy-page); }
+.reset-button:hover { background: var(--legacy-surface-hover); }
+.form-selector { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 16px; padding: 12px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.form-sprite { display: grid; width: 88px; height: 88px; place-items: center; border: 1px solid var(--legacy-border); background: var(--legacy-surface); }
+.form-sprite img { width: 84px; height: 84px; object-fit: contain; image-rendering: pixelated; }
+.form-selector label, .level-field, .nature-field { display: grid; gap: 5px; min-width: 0; color: var(--legacy-muted); font-size: 0.75rem; font-weight: 800; }
+.form-selector select, .control-grid select, .control-grid input, .stat-row input { width: 100%; min-height: 36px; padding: 6px 8px; border: 1px solid var(--legacy-border); border-radius: 4px; color: var(--legacy-text); background: var(--legacy-surface); }
+.form-selector small { color: var(--legacy-muted); font-size: 0.66rem; font-weight: 500; }
+.base-total { display: grid; justify-items: end; gap: 3px; min-width: 92px; }
+.base-total span { color: var(--legacy-muted); font-size: 0.64rem; font-weight: 900; text-transform: uppercase; }
+.base-total strong { font-size: 1.3rem; }
+.control-grid { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 10px; margin-top: 14px; }
+.formula-note { margin: 12px 0 0; color: var(--legacy-muted); font-size: 0.72rem; line-height: 1.45; }
+.stat-table { display: grid; gap: 5px; margin-top: 16px; overflow-x: auto; }
+.stat-row { display: grid; grid-template-columns: minmax(130px, 1.5fr) 64px 82px 82px 82px; gap: 8px; align-items: center; min-width: 500px; padding: 8px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.stat-head { color: var(--legacy-muted); font-size: 0.7rem; font-weight: 900; text-transform: uppercase; }
+.base-value, .result-value { text-align: right; }
+.result-value.increased { color: #22c55e; }
+.result-value.decreased { color: #ef4444; }
+.calculator-summary { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin-top: 14px; padding: 12px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.calculator-summary small { grid-column: 1 / -1; color: var(--legacy-muted); line-height: 1.45; }
+.calculator-summary.invalid { border-color: #ef4444; }
+.calculator-summary.invalid strong, .calculator-summary.invalid small { color: #ef4444; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 @media (max-width: 760px) {
-  .calculator-card {
-    padding: 12px;
-  }
-
-  .calculator-heading {
-    align-items: start;
-  }
-
-  .form-selector {
-    grid-template-columns: 72px minmax(0, 1fr);
-  }
-
-  .form-sprite {
-    width: 72px;
-    height: 72px;
-  }
-
-  .form-sprite img {
-    width: 68px;
-    height: 68px;
-  }
-
-  .base-total {
-    grid-column: 1 / -1;
-    grid-template-columns: 1fr auto;
-    justify-items: stretch;
-  }
-
-  .control-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 480px) {
-  .calculator-heading {
-    flex-direction: column;
-  }
-
-  .form-selector {
-    grid-template-columns: 1fr;
-  }
-
-  .form-sprite {
-    justify-self: center;
-  }
+  .calculator-card { padding: 12px; }
+  .calculator-heading { align-items: start; flex-direction: column; }
+  .form-selector { grid-template-columns: 70px minmax(0, 1fr); }
+  .form-sprite { width: 70px; height: 70px; }
+  .form-sprite img { width: 66px; height: 66px; }
+  .base-total { grid-column: 1 / -1; justify-items: start; }
+  .control-grid { grid-template-columns: 1fr; }
 }
 </style>
