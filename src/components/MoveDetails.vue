@@ -18,44 +18,29 @@
           <p class="eyebrow">{{ labels.move }} #{{ formatResourceId(details.id) }}</p>
           <h2>{{ displayName }}</h2>
           <div class="badge-row">
-            <span class="type-badge">
-              {{ getLocalizedTypeName(details.type?.name, language) }}
-            </span>
-            <span class="neutral-badge">
-              {{ getLocalizedDamageClassName(details.damage_class?.name, language) }}
-            </span>
+            <span class="type-badge">{{ getLocalizedTypeName(details.type?.name, language) }}</span>
+            <span class="neutral-badge">{{ getLocalizedDamageClassName(details.damage_class?.name, language) }}</span>
           </div>
         </div>
-        <span class="move-symbol" aria-hidden="true">⚡</span>
+        <span class="move-symbol">
+          <img
+            :src="getTypeIconDataUri(details.type?.name)"
+            :alt="getLocalizedTypeName(details.type?.name, language)"
+            width="80"
+            height="80"
+          >
+        </span>
       </header>
 
       <p class="description">{{ effectDescription }}</p>
 
       <dl class="facts-grid">
-        <div>
-          <dt>{{ labels.power }}</dt>
-          <dd>{{ details.power ?? '—' }}</dd>
-        </div>
-        <div>
-          <dt>{{ labels.accuracy }}</dt>
-          <dd>{{ details.accuracy === null ? '—' : `${details.accuracy}%` }}</dd>
-        </div>
-        <div>
-          <dt>AP</dt>
-          <dd>{{ details.pp ?? '—' }}</dd>
-        </div>
-        <div>
-          <dt>{{ labels.priority }}</dt>
-          <dd>{{ formatSignedNumber(details.priority) }}</dd>
-        </div>
-        <div>
-          <dt>{{ labels.target }}</dt>
-          <dd>{{ getLocalizedMoveTargetName(details.target?.name, language) }}</dd>
-        </div>
-        <div>
-          <dt>{{ labels.generation }}</dt>
-          <dd>{{ getLocalizedGenerationName(details.generation?.name, language) }}</dd>
-        </div>
+        <div><dt>{{ labels.power }}</dt><dd>{{ details.power ?? '—' }}</dd></div>
+        <div><dt>{{ labels.accuracy }}</dt><dd>{{ details.accuracy === null ? '—' : `${details.accuracy}%` }}</dd></div>
+        <div><dt>AP</dt><dd>{{ details.pp ?? '—' }}</dd></div>
+        <div><dt>{{ labels.priority }}</dt><dd>{{ formatSignedNumber(details.priority) }}</dd></div>
+        <div><dt>{{ labels.target }}</dt><dd>{{ getLocalizedMoveTargetName(details.target?.name, language) }}</dd></div>
+        <div><dt>{{ labels.generation }}</dt><dd>{{ getLocalizedGenerationName(details.generation?.name, language) }}</dd></div>
       </dl>
 
       <section v-if="showFlavorText" class="secondary-section">
@@ -63,9 +48,46 @@
         <p>{{ flavorText }}</p>
       </section>
 
-      <section class="secondary-section">
-        <h3>{{ labels.availability }}</h3>
-        <p>{{ labels.learnedBy.replace('{count}', details.learned_by_pokemon?.length ?? 0) }}</p>
+      <section class="secondary-section availability-section">
+        <div class="availability-heading">
+          <div>
+            <h3>{{ labels.availability }}</h3>
+            <p>{{ labels.learnedBy.replace('{count}', learnerRows.length) }}</p>
+          </div>
+          <label v-if="learnerRows.length > 12" class="learner-search">
+            <span class="visually-hidden">{{ labels.searchLearners }}</span>
+            <input v-model="learnerQuery" type="search" :placeholder="labels.searchLearners">
+          </label>
+        </div>
+
+        <p v-if="learnerRows.length === 0" class="empty-learners">{{ labels.noLearners }}</p>
+        <p v-else-if="filteredLearners.length === 0" class="empty-learners">{{ labels.noMatches }}</p>
+
+        <div v-else class="learner-grid">
+          <article v-for="pokemon in visibleLearners" :key="pokemon.name" class="learner-card">
+            <img
+              :src="pokemon.sprite"
+              :alt="pokemon.label"
+              width="64"
+              height="64"
+              loading="lazy"
+              decoding="async"
+            >
+            <div>
+              <small v-if="pokemon.id">#{{ formatResourceId(pokemon.id) }}</small>
+              <strong>{{ pokemon.label }}</strong>
+            </div>
+          </article>
+        </div>
+
+        <button
+          v-if="filteredLearners.length > learnerLimit"
+          type="button"
+          class="show-more-button"
+          @click="learnerLimit += LEARNER_PAGE_SIZE"
+        >
+          {{ labels.showMore }} ({{ visibleLearners.length }} / {{ filteredLearners.length }})
+        </button>
       </section>
     </template>
   </article>
@@ -76,6 +98,10 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
 import PokeAPI from '@/services/pokeapi';
 import {
+  getCatalogLabel,
+  loadGermanPokemonCatalog,
+} from '@/services/localizationCatalog';
+import {
   getLocalizedDamageClassName,
   getLocalizedGenerationName,
   getLocalizedMoveTargetName,
@@ -83,11 +109,14 @@ import {
 } from '@/utils/localization';
 import {
   formatResourceId,
+  formatResourceName,
   getLocalizedFlavorText,
   getLocalizedMoveDescription,
   getLocalizedName,
+  getResourceId,
 } from '@/utils/resource';
 import { getTypeColor } from '@/utils/typeColors';
+import { getTypeIconDataUri } from '@/utils/typeIcons';
 
 const props = defineProps({
   resource: {
@@ -97,65 +126,77 @@ const props = defineProps({
 });
 
 const { language } = useI18n();
+const LEARNER_PAGE_SIZE = 30;
 const details = ref(null);
+const pokemonCatalog = ref(new Map());
 const loading = ref(false);
 const errorMessage = ref('');
+const learnerQuery = ref('');
+const learnerLimit = ref(LEARNER_PAGE_SIZE);
 let activeRequestId = 0;
 
 const labels = computed(() => language.value === 'de'
   ? {
-      loading: 'Attackendetails werden geladen…',
-      tryAgain: 'Erneut versuchen',
-      move: 'Attacke',
-      power: 'Stärke',
-      accuracy: 'Genauigkeit',
-      priority: 'Priorität',
-      target: 'Ziel',
-      generation: 'Generation',
-      gameDescription: 'Spielbeschreibung',
-      availability: 'Verfügbarkeit',
-      learnedBy: '{count} Pokémon können diese Attacke im API-Datensatz erlernen.',
+      loading: 'Attackendetails werden geladen…', tryAgain: 'Erneut versuchen', move: 'Attacke',
+      power: 'Stärke', accuracy: 'Genauigkeit', priority: 'Priorität', target: 'Ziel',
+      generation: 'Generation', gameDescription: 'Spielbeschreibung', availability: 'Erlernbar von',
+      learnedBy: '{count} Pokémon und Formen können diese Attacke erlernen.',
+      searchLearners: 'Pokémon durchsuchen', noLearners: 'Für diese Attacke sind keine erlernenden Pokémon hinterlegt.',
+      noMatches: 'Kein Pokémon entspricht der Suche.', showMore: 'Weitere Pokémon anzeigen',
       loadError: 'Die Attackendetails konnten nicht geladen werden.',
     }
   : {
-      loading: 'Loading move details…',
-      tryAgain: 'Try again',
-      move: 'Move',
-      power: 'Power',
-      accuracy: 'Accuracy',
-      priority: 'Priority',
-      target: 'Target',
-      generation: 'Generation',
-      gameDescription: 'Game description',
-      availability: 'Availability',
-      learnedBy: '{count} Pokémon can learn this move in the API dataset.',
-      loadError: 'The move details could not be loaded.',
+      loading: 'Loading move details…', tryAgain: 'Try again', move: 'Move', power: 'Power',
+      accuracy: 'Accuracy', priority: 'Priority', target: 'Target', generation: 'Generation',
+      gameDescription: 'Game description', availability: 'Learned by',
+      learnedBy: '{count} Pokémon and forms can learn this move.', searchLearners: 'Search Pokémon',
+      noLearners: 'No Pokémon are listed for this move.', noMatches: 'No Pokémon matches the search.',
+      showMore: 'Show more Pokémon', loadError: 'The move details could not be loaded.',
     });
 
 const typeColor = computed(() => getTypeColor(details.value?.type?.name));
-const displayName = computed(() => {
-  return getLocalizedName(details.value?.names, details.value?.name, language.value);
+const displayName = computed(() => getLocalizedName(details.value?.names, details.value?.name, language.value));
+const flavorText = computed(() => getLocalizedFlavorText(details.value?.flavor_text_entries, language.value));
+const effectDescription = computed(() => getLocalizedMoveDescription({
+  effectEntries: details.value?.effect_entries,
+  flavorTextEntries: details.value?.flavor_text_entries,
+  effectChance: details.value?.effect_chance,
+  language: language.value,
+}));
+const showFlavorText = computed(() => Boolean(flavorText.value && flavorText.value !== effectDescription.value));
+
+const learnerRows = computed(() => (details.value?.learned_by_pokemon || [])
+  .map((pokemon) => {
+    const id = getResourceId(pokemon.url);
+    return {
+      id,
+      name: pokemon.name,
+      label: language.value === 'de'
+        ? getCatalogLabel(pokemonCatalog.value, id, pokemon.name)
+        : formatResourceName(pokemon.name),
+      sprite: id
+        ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`
+        : '',
+    };
+  })
+  .sort((first, second) => first.label.localeCompare(
+    second.label,
+    language.value === 'de' ? 'de-DE' : 'en-US',
+  )));
+
+const filteredLearners = computed(() => {
+  const query = learnerQuery.value.trim().toLocaleLowerCase(language.value);
+  if (!query) return learnerRows.value;
+  return learnerRows.value.filter((pokemon) => (
+    pokemon.name.includes(query)
+    || pokemon.label.toLocaleLowerCase(language.value).includes(query)
+    || String(pokemon.id || '').includes(query)
+  ));
 });
-const flavorText = computed(() => {
-  return getLocalizedFlavorText(details.value?.flavor_text_entries, language.value);
-});
-const effectDescription = computed(() => {
-  return getLocalizedMoveDescription({
-    effectEntries: details.value?.effect_entries,
-    flavorTextEntries: details.value?.flavor_text_entries,
-    effectChance: details.value?.effect_chance,
-    language: language.value,
-  });
-});
-const showFlavorText = computed(() => {
-  return Boolean(flavorText.value && flavorText.value !== effectDescription.value);
-});
+const visibleLearners = computed(() => filteredLearners.value.slice(0, learnerLimit.value));
 
 const formatSignedNumber = (value) => {
-  if (value === null || value === undefined) {
-    return '—';
-  }
-
+  if (value === null || value === undefined) return '—';
   return value > 0 ? `+${value}` : String(value);
 };
 
@@ -164,229 +205,65 @@ const loadDetails = async () => {
   loading.value = true;
   errorMessage.value = '';
   details.value = null;
+  learnerQuery.value = '';
+  learnerLimit.value = LEARNER_PAGE_SIZE;
 
   try {
-    const response = await PokeAPI.getMoveDetails(props.resource.name);
-
-    if (requestId === activeRequestId) {
-      details.value = response.data;
-    }
+    const [moveResult, catalogResult] = await Promise.allSettled([
+      PokeAPI.getMoveDetails(props.resource.name),
+      language.value === 'de' ? loadGermanPokemonCatalog() : Promise.resolve(new Map()),
+    ]);
+    if (requestId !== activeRequestId) return;
+    if (moveResult.status === 'rejected') throw moveResult.reason;
+    details.value = moveResult.value.data;
+    pokemonCatalog.value = catalogResult.status === 'fulfilled' ? catalogResult.value : new Map();
   } catch (requestError) {
     if (requestId === activeRequestId) {
       console.error('Failed to load move details:', requestError);
       errorMessage.value = labels.value.loadError;
     }
   } finally {
-    if (requestId === activeRequestId) {
-      loading.value = false;
-    }
+    if (requestId === activeRequestId) loading.value = false;
   }
 };
 
-watch(
-  () => props.resource.name,
-  loadDetails,
-  { immediate: true },
-);
+watch(() => props.resource.name, loadDetails, { immediate: true });
+watch(language, loadDetails);
+watch(learnerQuery, () => { learnerLimit.value = LEARNER_PAGE_SIZE; });
 </script>
 
 <style scoped>
-.detail-card {
-  min-width: 0;
-  min-height: 420px;
-  padding: clamp(22px, 4vw, 34px);
-  border: 1px solid color-mix(in srgb, var(--resource-color) 34%, #d5d9e1);
-  border-radius: 22px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--resource-color) 9%, #ffffff), #ffffff 230px);
-  box-shadow: 0 16px 42px rgba(23, 32, 51, 0.08);
-}
-
-.status-message,
-.error-message {
-  margin: 0;
-  padding: 28px 0;
-  color: #596579;
-}
-
-.error-message {
-  color: #991b1b;
-}
-
-.error-message button {
-  margin-top: 10px;
-  padding: 8px 12px;
-  border: 1px solid #b91c1c;
-  border-radius: 9px;
-  color: #991b1b;
-  cursor: pointer;
-  background: #fff7f7;
-}
-
-.detail-header {
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: color-mix(in srgb, var(--resource-color) 74%, #172033);
-  font-size: 0.78rem;
-  font-weight: 900;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.detail-header h2 {
-  margin: 0;
-  color: #172033;
-  font-size: clamp(2rem, 5vw, 3.5rem);
-  line-height: 1;
-  letter-spacing: -0.04em;
-}
-
-.badge-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.type-badge,
-.neutral-badge {
-  padding: 6px 11px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 900;
-}
-
-.type-badge {
-  border: 1px solid rgba(23, 32, 51, 0.14);
-  color: #172033;
-  background: var(--resource-color);
-}
-
-.neutral-badge {
-  color: #4b5563;
-  background: #eef1f6;
-}
-
-.move-symbol {
-  display: grid;
-  flex: 0 0 auto;
-  width: 92px;
-  height: 92px;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--resource-color) 38%, #172033);
-  border-radius: 26px;
-  color: #172033;
-  font-size: 2.2rem;
-  background: var(--resource-color);
-}
-
-.description {
-  margin: 28px 0 0;
-  padding: 18px;
-  border-left: 4px solid var(--resource-color);
-  border-radius: 10px;
-  color: #344054;
-  line-height: 1.65;
-  background: rgba(248, 250, 252, 0.9);
-}
-
-.facts-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin: 24px 0 0;
-}
-
-.facts-grid div {
-  padding: 15px;
-  border: 1px solid #e3e6eb;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.facts-grid dt {
-  margin-bottom: 5px;
-  color: #7a8494;
-  font-size: 0.75rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.facts-grid dd {
-  margin: 0;
-  color: #172033;
-  font-size: 1.05rem;
-  font-weight: 800;
-}
-
-.secondary-section {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid #e3e6eb;
-}
-
-.secondary-section h3 {
-  margin: 0 0 8px;
-  color: #172033;
-  font-size: 1rem;
-}
-
-.secondary-section p {
-  margin: 0;
-  color: #596579;
-  line-height: 1.6;
-}
-
-@media (max-width: 680px) {
-  .detail-card {
-    min-height: 0;
-    padding: 14px;
-  }
-
-  .detail-header {
-    gap: 12px;
-  }
-
-  .detail-header h2 {
-    font-size: clamp(1.65rem, 9vw, 2.5rem);
-  }
-
-  .move-symbol {
-    width: 62px;
-    height: 62px;
-    border-radius: 14px;
-    font-size: 1.45rem;
-  }
-
-  .description {
-    margin-top: 16px;
-    padding: 12px;
-  }
-
-  .facts-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 14px;
-  }
-
-  .facts-grid div {
-    padding: 10px;
-  }
-
-  .facts-grid dd {
-    font-size: 0.95rem;
-  }
-}
-
-@media (max-width: 340px) {
-  .facts-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.detail-card { min-width: 0; min-height: 420px; padding: clamp(20px, 3vw, 32px); border: 1px solid color-mix(in srgb, var(--resource-color) 34%, var(--legacy-border)); border-radius: 4px; color: var(--legacy-text); background: var(--legacy-surface); box-shadow: 0 2px 5px var(--legacy-shadow); }
+.status-message, .error-message { margin: 0; padding: 28px 0; color: var(--legacy-muted); }
+.error-message { color: #ef4444; }
+.error-message button, .show-more-button { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--legacy-border-strong); border-radius: 4px; color: var(--legacy-text); cursor: pointer; background: var(--legacy-page); }
+.detail-header { display: flex; gap: 24px; justify-content: space-between; align-items: flex-start; padding: 18px; background: var(--legacy-page); }
+.eyebrow { margin: 0 0 8px; color: var(--legacy-muted); font-size: 0.78rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+.detail-header h2 { margin: 0; overflow-wrap: anywhere; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1; letter-spacing: -0.04em; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.type-badge, .neutral-badge { padding: 6px 11px; border: 1px solid var(--legacy-border); border-radius: 999px; font-size: 0.8rem; font-weight: 900; }
+.type-badge { color: #1f2937; background: var(--resource-color); }
+.neutral-badge { color: var(--legacy-text); background: var(--legacy-surface); }
+.move-symbol { display: grid; flex: 0 0 auto; width: 96px; height: 96px; place-items: center; border: 1px solid var(--legacy-border); border-radius: 18px; background: var(--legacy-surface); }
+.move-symbol img { width: 80px; height: 80px; border-radius: 16px; }
+.description { margin: 18px 0 0; padding: 18px; border-left: 4px solid var(--resource-color); color: var(--legacy-text); line-height: 1.65; background: var(--legacy-page); }
+.facts-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0 0; }
+.facts-grid div { padding: 14px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.facts-grid dt { margin-bottom: 5px; color: var(--legacy-muted); font-size: 0.72rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; }
+.facts-grid dd { margin: 0; font-size: 1rem; font-weight: 800; }
+.secondary-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--legacy-border); }
+.secondary-section h3 { margin: 0 0 8px; font-size: 1rem; }
+.secondary-section p { margin: 0; color: var(--legacy-muted); line-height: 1.6; }
+.availability-heading { display: flex; gap: 14px; justify-content: space-between; align-items: end; }
+.learner-search input { min-height: 38px; padding: 7px 9px; border: 1px solid var(--legacy-border); color: var(--legacy-text); background: var(--legacy-page); }
+.learner-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 14px; }
+.learner-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 9px; align-items: center; min-height: 82px; padding: 8px; border: 1px solid var(--legacy-border); background: var(--legacy-page); }
+.learner-card img { width: 64px; height: 64px; object-fit: contain; image-rendering: pixelated; }
+.learner-card div { display: grid; min-width: 0; }
+.learner-card small { color: var(--legacy-muted); font-size: 0.62rem; }
+.learner-card strong { overflow: hidden; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.empty-learners { margin-top: 12px !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 680px) { .detail-card { min-height: 0; padding: 12px; } .detail-header { gap: 12px; padding: 12px; } .move-symbol { width: 66px; height: 66px; } .move-symbol img { width: 56px; height: 56px; } .facts-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .availability-heading { align-items: stretch; flex-direction: column; } .learner-search input { width: 100%; } }
+@media (max-width: 360px) { .facts-grid, .learner-grid { grid-template-columns: 1fr; } }
 </style>
