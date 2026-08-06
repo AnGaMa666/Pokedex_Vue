@@ -20,6 +20,28 @@ test('calculates HP with the main-series stat formula', () => {
   assert.equal(hp, 183);
 });
 
+test('uses level 50 with zero IV/DV and zero EV as the neutral default', () => {
+  const stats = calculatePokemonStats({
+    pokemonStats: [
+      { base_stat: 78, stat: { name: 'hp' } },
+      { base_stat: 84, stat: { name: 'attack' } },
+      { base_stat: 78, stat: { name: 'defense' } },
+      { base_stat: 109, stat: { name: 'special-attack' } },
+      { base_stat: 85, stat: { name: 'special-defense' } },
+      { base_stat: 100, stat: { name: 'speed' } },
+    ],
+  });
+
+  assert.deepEqual(stats, {
+    hp: 138,
+    attack: 89,
+    defense: 83,
+    'special-attack': 114,
+    'special-defense': 90,
+    speed: 105,
+  });
+});
+
 test('applies a beneficial nature after the non-HP stat calculation', () => {
   const speed = calculateStat({
     base: 102,
