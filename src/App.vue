@@ -33,7 +33,7 @@
           />
 
           <section ref="detailsContainer" class="details-container" aria-live="polite">
-            <PokemonProfile
+            <PokemonProfileEnhanced
               v-if="selectedPokemon"
               :key="selectedPokemon.name"
               :pokemon="selectedPokemon"
@@ -81,6 +81,8 @@
         />
       </main>
     </div>
+
+    <AppFooter />
   </div>
 </template>
 
@@ -94,13 +96,14 @@ import {
   ref,
 } from 'vue';
 import { useI18n } from '@/i18n';
+import AppFooter from './components/AppFooter.vue';
 import AppNavigation from './components/AppNavigation.vue';
 import ExplorerDirectory from './components/ExplorerDirectory.vue';
 import Header from './components/Header.vue';
 import HomePage from './components/HomePage.vue';
 import MoveList from './components/MoveList.vue';
 import PokemonList from './components/PokemonList.vue';
-import PokemonProfile from './components/PokemonProfile.vue';
+import PokemonProfileEnhanced from './components/PokemonProfileEnhanced.vue';
 import RouteDirectory from './components/RouteDirectory.vue';
 import TeamBuilder from './components/TeamBuilder.vue';
 
@@ -339,8 +342,8 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
   gap: 18px;
   width: min(100%, 2160px);
-  min-height: 100vh;
-  padding: 86px 16px 28px;
+  min-height: calc(100vh - 72px);
+  padding: 86px 16px 20px;
   margin: 0 auto;
 }
 
@@ -443,7 +446,7 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .workspace {
     gap: 12px;
-    padding: 12px 9px 20px;
+    padding: 12px 9px 14px;
   }
 
   .pokedex-layout,

@@ -69,7 +69,7 @@ export const getNatureModifier = (statName, natureName) => {
 
 export const calculateStat = ({
   base,
-  iv = 31,
+  iv = 0,
   ev = 0,
   level = 50,
   statName,
@@ -120,7 +120,7 @@ export const calculatePokemonStats = ({
       statName,
       calculateStat({
         base: baseStats[statName],
-        iv: ivs[statName] ?? 31,
+        iv: ivs[statName] ?? 0,
         ev: evs[statName] ?? 0,
         level,
         statName,

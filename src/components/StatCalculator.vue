@@ -5,20 +5,54 @@
         <p class="calculator-eyebrow">{{ labels.competitive }}</p>
         <h3 id="stat-calculator-title">{{ labels.title }}</h3>
       </div>
+      <button type="button" class="reset-button" @click="resetCalculator">
+        {{ labels.reset }}
+      </button>
+    </div>
+
+    <div class="form-selector">
+      <span class="form-sprite" aria-hidden="true">
+        <img
+          v-if="activeSprite"
+          :src="activeSprite"
+          alt=""
+          width="88"
+          height="88"
+        >
+      </span>
+      <label>
+        <span>{{ labels.form }}</span>
+        <select v-model="selectedFormName" :disabled="loadingForms || formOptions.length < 2">
+          <option v-for="option in formOptions" :key="option.name" :value="option.name">
+            {{ option.label }}
+          </option>
+        </select>
+        <small v-if="loadingForms">{{ labels.loadingForms }}</small>
+        <small v-else>{{ labels.formHint }}</small>
+      </label>
+      <div class="base-total">
+        <span>{{ labels.baseTotal }}</span>
+        <strong>{{ baseTotal }}</strong>
+      </div>
+    </div>
+
+    <div class="control-grid">
       <label class="level-field">
         <span>{{ labels.level }}</span>
         <input v-model.number="level" type="number" min="1" max="100">
       </label>
+
+      <label class="nature-field">
+        <span>{{ labels.nature }}</span>
+        <select v-model="nature">
+          <option v-for="entry in natureOptions" :key="entry.name" :value="entry.name">
+            {{ entry.label }} · {{ formatNatureEffect(entry) }}
+          </option>
+        </select>
+      </label>
     </div>
 
-    <label class="nature-field">
-      <span>{{ labels.nature }}</span>
-      <select v-model="nature">
-        <option v-for="entry in natureOptions" :key="entry.name" :value="entry.name">
-          {{ entry.label }} · {{ formatNatureEffect(entry) }}
-        </option>
-      </select>
-    </label>
+    <p class="formula-note">{{ labels.formulaNote }}</p>
 
     <div class="stat-table" role="table" :aria-label="labels.title">
       <div class="stat-row stat-head" role="row">
@@ -31,7 +65,7 @@
 
       <div v-for="statName in statNames" :key="statName" class="stat-row" role="row">
         <strong role="cell">{{ getStatLabel(statName) }}</strong>
-        <span role="cell">{{ baseStats[statName] }}</span>
+        <span role="cell" class="base-value">{{ baseStats[statName] }}</span>
         <label role="cell">
           <span class="sr-only">{{ `${getStatLabel(statName)} ${labels.iv}` }}</span>
           <input
@@ -77,6 +111,11 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from '@/i18n';
+import PokeAPI from '@/services/pokeapi';
+import {
+  getCatalogLabel,
+  loadGermanPokemonCatalog,
+} from '@/services/localizationCatalog';
 import {
   BATTLE_STATS,
   NATURES,
@@ -85,6 +124,7 @@ import {
   getTotalEvs,
   normalizeBaseStats,
 } from '@/utils/statCalculator';
+import { formatResourceName } from '@/utils/resource';
 
 const props = defineProps({
   pokemonDetails: {
@@ -94,10 +134,15 @@ const props = defineProps({
 });
 
 const { language } = useI18n();
+const MAX_PARALLEL_REQUESTS = 6;
 const level = ref(50);
 const nature = ref('hardy');
-const ivs = reactive(Object.fromEntries(BATTLE_STATS.map((statName) => [statName, 31])));
+const selectedFormName = ref('');
+const formOptions = ref([]);
+const loadingForms = ref(false);
+const ivs = reactive(Object.fromEntries(BATTLE_STATS.map((statName) => [statName, 0])));
 const evs = reactive(Object.fromEntries(BATTLE_STATS.map((statName) => [statName, 0])));
+let formRequestId = 0;
 
 const germanNatureNames = {
   hardy: 'Robust',
@@ -149,6 +194,11 @@ const labels = computed(() => language.value === 'de'
   ? {
       competitive: 'Werteplanung',
       title: 'EV-, IV-/DV- und Wesen-Rechner',
+      form: 'Pokémon-Form',
+      formHint: 'Jede Form verwendet ihre eigenen Basiswerte.',
+      loadingForms: 'Weitere Formen werden geladen…',
+      baseTotal: 'Basiswertsumme',
+      reset: 'Auf Standard zurücksetzen',
       level: 'Level',
       nature: 'Wesen',
       stat: 'Statuswert',
@@ -161,11 +211,17 @@ const labels = computed(() => language.value === 'de'
       decreased: 'gesenkt',
       evTotal: 'Verteilte EV',
       evTooHigh: 'Die zulässige Gesamtgrenze von 510 EV ist überschritten.',
-      evHint: 'Pro Statuswert zählen höchstens 252 EV; vier EV ergeben einen Punkt vor der Level-Skalierung.',
+      evHint: 'Standard: Level 50, 0 IV/DV und 0 EV. Pro Statuswert zählen höchstens 252 EV.',
+      formulaNote: 'Die Basiswerte der ausgewählten Form werden vollständig in die Hauptspiel-Formel eingerechnet. IV/DV und EV starten bewusst bei 0.',
     }
   : {
       competitive: 'Stat planning',
       title: 'EV, IV/DV and nature calculator',
+      form: 'Pokémon form',
+      formHint: 'Every form uses its own base stats.',
+      loadingForms: 'Loading additional forms…',
+      baseTotal: 'Base stat total',
+      reset: 'Reset to defaults',
       level: 'Level',
       nature: 'Nature',
       stat: 'Stat',
@@ -178,14 +234,28 @@ const labels = computed(() => language.value === 'de'
       decreased: 'lowered',
       evTotal: 'Allocated EVs',
       evTooHigh: 'The legal total limit of 510 EVs has been exceeded.',
-      evHint: 'Each stat accepts up to 252 EVs; four EVs contribute one point before level scaling.',
+      evHint: 'Default: level 50, 0 IV/DV and 0 EV. Each stat accepts up to 252 EVs.',
+      formulaNote: 'The selected form’s base stats are fully included in the main-series formula. IV/DV and EV intentionally start at 0.',
     });
 
 const statNames = BATTLE_STATS;
-const baseStats = computed(() => normalizeBaseStats(props.pokemonDetails.stats));
+const activeOption = computed(() => {
+  return formOptions.value.find((option) => option.name === selectedFormName.value)
+    || formOptions.value[0]
+    || { details: props.pokemonDetails };
+});
+const activePokemonDetails = computed(() => activeOption.value.details || props.pokemonDetails);
+const activeSprite = computed(() => {
+  const details = activePokemonDetails.value;
+  return details?.sprites?.other?.['official-artwork']?.front_default
+    || details?.sprites?.front_default
+    || '';
+});
+const baseStats = computed(() => normalizeBaseStats(activePokemonDetails.value.stats));
+const baseTotal = computed(() => Object.values(baseStats.value).reduce((total, value) => total + value, 0));
 const natureDetails = computed(() => getNature(nature.value));
 const calculatedStats = computed(() => calculatePokemonStats({
-  pokemonStats: props.pokemonDetails.stats,
+  pokemonStats: activePokemonDetails.value.stats,
   ivs,
   evs,
   level: level.value,
@@ -218,9 +288,113 @@ const normalizeValue = (target, key, maximum) => {
   target[key] = Math.min(maximum, Math.max(0, Number.isFinite(numericValue) ? Math.trunc(numericValue) : 0));
 };
 
+const resetTrainingValues = () => {
+  for (const statName of BATTLE_STATS) {
+    ivs[statName] = 0;
+    evs[statName] = 0;
+  }
+};
+
+const resetCalculator = () => {
+  level.value = 50;
+  nature.value = 'hardy';
+  selectedFormName.value = props.pokemonDetails.name;
+  resetTrainingValues();
+};
+
+const loadFormOptions = async () => {
+  const activeRequestId = ++formRequestId;
+  const currentDetails = props.pokemonDetails;
+  selectedFormName.value = currentDetails.name;
+  formOptions.value = [{
+    name: currentDetails.name,
+    id: currentDetails.id,
+    label: formatResourceName(currentDetails.name),
+    details: currentDetails,
+  }];
+  loadingForms.value = true;
+
+  try {
+    const speciesName = currentDetails.species?.name || currentDetails.name;
+    const speciesResponse = await PokeAPI.getPokemonSpecies(speciesName);
+    const varieties = speciesResponse.data.varieties || [];
+    const detailsByName = new Map([[currentDetails.name, currentDetails]]);
+    let nextIndex = 0;
+
+    const worker = async () => {
+      while (nextIndex < varieties.length) {
+        const variety = varieties[nextIndex];
+        nextIndex += 1;
+        const name = variety.pokemon?.name;
+        if (!name || detailsByName.has(name)) continue;
+
+        try {
+          const response = await PokeAPI.getPokemonDetails(name);
+          detailsByName.set(name, response.data);
+        } catch (error) {
+          console.error(`Failed to load calculator form ${name}:`, error);
+        }
+      }
+    };
+
+    await Promise.all(Array.from(
+      { length: Math.min(MAX_PARALLEL_REQUESTS, Math.max(1, varieties.length)) },
+      worker,
+    ));
+
+    let germanCatalog = null;
+    if (language.value === 'de') {
+      try {
+        germanCatalog = await loadGermanPokemonCatalog();
+      } catch (error) {
+        console.error('Failed to load German form names for the stat calculator:', error);
+      }
+    }
+
+    if (activeRequestId !== formRequestId) return;
+    formOptions.value = varieties
+      .map((variety) => detailsByName.get(variety.pokemon?.name))
+      .filter(Boolean)
+      .map((details) => ({
+        name: details.name,
+        id: details.id,
+        label: language.value === 'de' && germanCatalog
+          ? getCatalogLabel(germanCatalog, details.id, details.name)
+          : formatResourceName(details.name),
+        details,
+      }))
+      .sort((first, second) => {
+        if (first.name === currentDetails.name) return -1;
+        if (second.name === currentDetails.name) return 1;
+        return first.label.localeCompare(second.label, language.value);
+      });
+
+    if (!formOptions.value.some((option) => option.name === selectedFormName.value)) {
+      selectedFormName.value = formOptions.value[0]?.name || currentDetails.name;
+    }
+  } catch (error) {
+    console.error('Failed to load calculator forms:', error);
+  } finally {
+    if (activeRequestId === formRequestId) loadingForms.value = false;
+  }
+};
+
 watch(level, (value) => {
   const numericValue = Number(value);
   level.value = Math.min(100, Math.max(1, Number.isFinite(numericValue) ? Math.trunc(numericValue) : 50));
+});
+
+watch(
+  () => props.pokemonDetails.name,
+  () => {
+    resetCalculator();
+    void loadFormOptions();
+  },
+  { immediate: true },
+);
+
+watch(language, () => {
+  void loadFormOptions();
 });
 </script>
 
@@ -254,6 +428,51 @@ watch(level, (value) => {
   text-transform: uppercase;
 }
 
+.reset-button {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--legacy-border);
+  border-radius: 4px;
+  color: var(--legacy-text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  background: var(--legacy-page);
+}
+
+.reset-button:hover {
+  border-color: var(--legacy-border-strong);
+  background: var(--legacy-surface-hover);
+}
+
+.form-selector {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid var(--legacy-border);
+  background: var(--legacy-page);
+}
+
+.form-sprite {
+  display: grid;
+  width: 88px;
+  height: 88px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--legacy-border);
+  background: var(--legacy-surface);
+}
+
+.form-sprite img {
+  width: 82px;
+  height: 82px;
+  object-fit: contain;
+}
+
+.form-selector label,
 .level-field,
 .nature-field {
   display: grid;
@@ -263,14 +482,7 @@ watch(level, (value) => {
   font-weight: 800;
 }
 
-.level-field input {
-  width: 82px;
-}
-
-.nature-field {
-  margin-top: 16px;
-}
-
+.form-selector select,
 .nature-field select,
 .level-field input,
 .stat-row input {
@@ -279,7 +491,50 @@ watch(level, (value) => {
   border: 1px solid var(--legacy-border);
   border-radius: 4px;
   color: var(--legacy-text);
-  background: var(--legacy-page);
+  background: var(--legacy-surface);
+}
+
+.form-selector small {
+  color: var(--legacy-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.base-total {
+  display: grid;
+  justify-items: end;
+  min-width: 90px;
+}
+
+.base-total span {
+  color: var(--legacy-muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.base-total strong {
+  margin-top: 4px;
+  font-size: 1.2rem;
+}
+
+.control-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.level-field input {
+  width: 100%;
+}
+
+.formula-note {
+  margin: 12px 0 0;
+  color: var(--legacy-muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
 }
 
 .stat-table {
@@ -311,7 +566,9 @@ watch(level, (value) => {
   width: 100%;
 }
 
+.base-value,
 .result-value {
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -367,6 +624,44 @@ watch(level, (value) => {
 
   .calculator-heading {
     align-items: start;
+  }
+
+  .form-selector {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .form-sprite {
+    width: 72px;
+    height: 72px;
+  }
+
+  .form-sprite img {
+    width: 68px;
+    height: 68px;
+  }
+
+  .base-total {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr auto;
+    justify-items: stretch;
+  }
+
+  .control-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .calculator-heading {
+    flex-direction: column;
+  }
+
+  .form-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .form-sprite {
+    justify-self: center;
   }
 }
 </style>
